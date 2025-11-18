@@ -1,0 +1,2 @@
+# TradingBot
+My Trading Bot
