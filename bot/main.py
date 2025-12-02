@@ -482,6 +482,20 @@ async def run_live_trading(
                 await asyncio.sleep(scan_interval)
                 continue
             
+            # Check Telegram pause state
+            if telegram and not telegram.is_trading_allowed():
+                await asyncio.sleep(scan_interval)
+                continue
+            
+            # UPDATE RISK FROM TELEGRAM ON EVERY SCAN
+            # This ensures risk changes take effect immediately
+            if telegram:
+                current_risk = telegram.get_risk_per_trade() / 100.0
+                for runner in runners.values():
+                    if runner.engine.risk._risk_per_trade != current_risk:
+                        runner.engine.risk._risk_per_trade = current_risk
+                        system_logger.info(f"[RISK] Updated to {current_risk*100:.1f}%")
+            
             # Fetch latest candles and check for signals on EVERY scan
             signals_found = 0
             positions_updated = 0
@@ -549,8 +563,9 @@ async def run_live_trading(
                 # If we got a signal, execute it
                 if signal and not mt5_has_position:
                     signals_found += 1
+                    current_risk_pct = runner.engine.risk._risk_per_trade * 100
                     print(f"\n[SIGNAL] {symbol}: {signal.side.value.upper()} @ {signal.entry:.5f}")
-                    print(f"         SL={signal.stop_loss:.5f} TP={signal.take_profit:.5f}")
+                    print(f"         SL={signal.stop_loss:.5f} TP={signal.take_profit:.5f} Risk={current_risk_pct:.1f}%")
                     
                     # Check daily drawdown limit (from Telegram control)
                     if telegram and telegram.is_daily_drawdown_enabled():
@@ -563,7 +578,7 @@ async def run_live_trading(
                     
                     system_logger.info(
                         f"[SIGNAL] {symbol}: {signal.side.value.upper()} | "
-                        f"Entry={signal.entry:.5f} SL={signal.stop_loss:.5f} TP={signal.take_profit:.5f}"
+                        f"Entry={signal.entry:.5f} SL={signal.stop_loss:.5f} TP={signal.take_profit:.5f} Risk={current_risk_pct:.1f}%"
                     )
                     
                     if not runner.dry_run:

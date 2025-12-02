@@ -302,8 +302,8 @@ class TelegramController:
             "• /drawdown - Show/toggle daily limit\n"
             "• /drawdown 5.0 - Set 5% daily limit\n"
             "• /drawdown off - Disable limit\n"
-            "• /rr 3.0 - Set R:R target\n"
-            "• /confluence 4 - Set min score\n\n"
+            "• /rr - Show per-instrument R:R\n"
+            "• /confluence - Show per-instrument conf\n\n"
             "*Control:*\n"
             "• /pause - Pause trading\n"
             "• /resume - Resume trading\n"
@@ -448,38 +448,32 @@ class TelegramController:
             return "❌ Invalid input.\n\nExamples:\n• /drawdown 5.0\n• /drawdown on\n• /drawdown off"
     
     def _cmd_rr(self, args: List[str]) -> str:
-        if not args:
-            return f"📊 R:R Target: {self.state.rr_target:.1f}:1\n\nSet: /rr 3.0"
-        
-        try:
-            new_rr = float(args[0])
-            if new_rr < 1.0 or new_rr > 10:
-                return "❌ R:R must be between 1.0 and 10.0"
-            
-            old_rr = self.state.rr_target
-            self.state.rr_target = new_rr
-            self._save_state()
-            
-            return f"✅ R:R updated!\n   {old_rr:.1f}:1 → {new_rr:.1f}:1"
-        except ValueError:
-            return "❌ Invalid number. Example: /rr 3.0"
+        # NOTE: R:R is now per-instrument from backtesting optimization
+        # This command is kept for reference but doesn't override per-instrument settings
+        return (
+            "ℹ️ *R:R is now per-instrument (optimized)*\n\n"
+            "• BTCUSD: 2.2:1\n"
+            "• XAUUSD: 4.0:1\n"
+            "• USDJPY: 1.7:1\n"
+            "• GBPJPY: 3.0:1\n"
+            "• EURUSD: 1.5:1\n"
+            "• GBPUSD: 1.7:1\n\n"
+            "_These are optimized from backtesting_"
+        )
     
     def _cmd_confluence(self, args: List[str]) -> str:
-        if not args:
-            return f"📊 Min Confluence: {self.state.min_confluence}\n\nSet: /confluence 4"
-        
-        try:
-            new_conf = int(args[0])
-            if new_conf < 1 or new_conf > 10:
-                return "❌ Confluence must be between 1 and 10"
-            
-            old_conf = self.state.min_confluence
-            self.state.min_confluence = new_conf
-            self._save_state()
-            
-            return f"✅ Confluence updated!\n   {old_conf} → {new_conf}"
-        except ValueError:
-            return "❌ Invalid number. Example: /confluence 4"
+        # NOTE: Confluence is now per-instrument from backtesting optimization
+        # This command is kept for reference but doesn't override per-instrument settings
+        return (
+            "ℹ️ *Confluence is now per-instrument (optimized)*\n\n"
+            "• BTCUSD: 4\n"
+            "• XAUUSD: 3\n"
+            "• USDJPY: 1\n"
+            "• GBPJPY: 1\n"
+            "• EURUSD: 2\n"
+            "• GBPUSD: 2\n\n"
+            "_These are optimized from backtesting_"
+        )
     
     def _cmd_pause(self, args: List[str]) -> str:
         if self.state.is_paused:
