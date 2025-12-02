@@ -24,6 +24,17 @@ from backtest.metrics import (  # type: ignore  # noqa: E402
     plot_equity_curve,
 )
 from config.settings import SETTINGS  # type: ignore  # noqa: E402
+from config.strategy_config import (  # type: ignore  # noqa: E402
+    STRATEGY_NAME,
+    STRATEGY_PARAMS,
+    DEFAULT_INSTRUMENT,
+    DEFAULT_RISK_PERCENT,
+    INITIAL_BALANCE,
+    BACKTEST_DAYS,
+    TIMEFRAME,
+    get_params_for_instrument,
+    get_timeframe_for_instrument,
+)
 from core.logger import configure_logging, get_logger  # type: ignore  # noqa: E402
 from core.mt5_client import (  # type: ignore  # noqa: E402
     MT5NotAvailable,
@@ -40,30 +51,18 @@ from core.utils import Candle, load_candles  # type: ignore  # noqa: E402
 DATA_PATH: Optional[Path] = None  # Set to a CSV for offline mode, leave None for MT5.
 USE_MT5 = True
 MT5_TERMINAL_PATH: Optional[str] = None  # Point to terminal64.exe if auto-discovery fails.
-TIMEFRAME = "M5"
 INSTRUMENTS = list(SETTINGS.allowed_instruments.keys())
-STRATEGY_NAME = "ict_smc"
-STRATEGY_PARAMS: Dict[str, Any] = {
-    "min_candles": 20,
-    "sessions": ("London", "NewYork"),
-    "bias_mode": "auto",
-    "require_bias_alignment": False,
-    "displacement_lookback": 4,
-    "min_displacement": 0.05,
-    "sweep_lookback": 15,
-    "sweep_reentry_buffer_mult": 0.35,
-    "sweep_reentry_bars": 4,
-    "allow_synthetic_sweeps": True,
-    "gap_tolerance_mult": 2.0,
-    "require_gap": False,
-    "require_block": False,
-    "atr_buffer_mult": 0.15,
-    "rr_target": 2.0,
-    "demo_mode": False,
-}
-DAYS = 30
-INITIAL_BALANCE = 200_000.0
-RISK_PERCENT = 10.0
+
+# These now come from shared config (config/strategy_config.py):
+# - STRATEGY_NAME
+# - STRATEGY_PARAMS  
+# - DEFAULT_INSTRUMENT
+# - DEFAULT_RISK_PERCENT
+# - INITIAL_BALANCE
+# - BACKTEST_DAYS
+# - TIMEFRAME
+
+DAYS = BACKTEST_DAYS
 SPREAD = None
 SLIPPAGE = None
 LOG_LEVEL = "INFO"
@@ -75,7 +74,7 @@ def _percent_to_fraction(value: float) -> float:
     return max(value, 0.0) / 100.0
 
 
-RISK_FRACTION = _percent_to_fraction(RISK_PERCENT)
+RISK_FRACTION = _percent_to_fraction(DEFAULT_RISK_PERCENT)
 
 
 @dataclass
@@ -173,7 +172,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--start", help="ISO timestamp for lookback start (inclusive)")
     parser.add_argument("--end", help="ISO timestamp for lookback end (inclusive)")
     parser.add_argument("--strategy", default=BASE_CONFIG.strategy_name, help="Strategy name registered in the factory")
-    parser.add_argument("--timeframe", default=BASE_CONFIG.timeframe, help="MT5 timeframe code (e.g. M1, M5, H1)")
+    parser.add_argument("--timeframe", default=None, help="MT5 timeframe code (e.g. M1, M5, H1). If omitted, uses per-instrument optimal TF.")
     parser.add_argument("--mt5-path", help="Explicit path to MetaTrader 5 terminal64.exe")
     parser.add_argument("--use-csv", action="store_true", help="Force CSV mode even if MT5 is configured")
     parser.add_argument("--no-mt5", action="store_true", help="Alias for --use-csv")
@@ -457,7 +456,18 @@ def main() -> None:
     if not instruments:
         raise SystemExit("No instruments selected. Update RUN CONFIG at the top or supply --instrument symbol.")
     for symbol in instruments:
-        run_single_backtest(symbol, args, config)
+        # Create per-instrument config with optimized params
+        inst_config = config.copy()
+        # Start with per-instrument defaults, then overlay CLI --param overrides
+        inst_params = get_params_for_instrument(symbol)
+        inst_params.update(param_overrides)  # CLI params take precedence
+        inst_config.strategy_params = inst_params
+        # CLI --timeframe takes precedence, then per-instrument, then base config default
+        if args.timeframe:
+            inst_config.timeframe = args.timeframe.upper()
+        else:
+            inst_config.timeframe = get_timeframe_for_instrument(symbol) or inst_config.timeframe
+        run_single_backtest(symbol, args, inst_config)
 
 
 if __name__ == "__main__":  # pragma: no cover

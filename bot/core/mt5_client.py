@@ -19,6 +19,31 @@ class MT5NotAvailable(RuntimeError):
     """Raised when MetaTrader 5 isn't available locally."""
 
 
+# =============================================================================
+# SYMBOL MAPPING: Internal name -> MT5 broker symbol
+# BTCUSD has no suffix, all others have "+" suffix
+# =============================================================================
+SYMBOL_MAP: Dict[str, str] = {
+    "BTCUSD": "BTCUSD",      # No suffix
+    "USDJPY": "USDJPY+",
+    "XAUUSD": "XAUUSD+",
+    "GBPJPY": "GBPJPY+",
+    "EURUSD": "EURUSD+",
+    "GBPUSD": "GBPUSD+",
+}
+
+
+def get_mt5_symbol(internal_symbol: str) -> str:
+    """Convert internal symbol name to MT5 broker symbol."""
+    normalized = internal_symbol.upper().strip()
+    if normalized in SYMBOL_MAP:
+        return SYMBOL_MAP[normalized]
+    # Default: add + suffix for unknown symbols (except BTC pairs)
+    if "BTC" in normalized:
+        return normalized
+    return normalized + "+"
+
+
 def ensure_initialized(path: Optional[str] = None) -> None:
     """Start an MT5 session if one is not already active."""
 
@@ -73,10 +98,14 @@ def fetch_candles(
     utc = timezone.utc
     end = datetime.now(tz=utc)
     start = end - timedelta(days=days + buffer_days)
-    rates = mt5.copy_rates_range(symbol, tf_code, start, end)
+    
+    # Convert internal symbol to MT5 broker symbol
+    mt5_symbol = get_mt5_symbol(symbol)
+    
+    rates = mt5.copy_rates_range(mt5_symbol, tf_code, start, end)
     if rates is None or len(rates) == 0:
         code, message = mt5.last_error()
-        raise RuntimeError(f"MetaTrader5 returned no data for {symbol} ({code}): {message}")
+        raise RuntimeError(f"MetaTrader5 returned no data for {mt5_symbol} ({code}): {message}")
     volume_field = _volume_field_name(rates)
     candles = [
         Candle(
@@ -136,4 +165,4 @@ def _volume_field_name(rates) -> Optional[str]:
     return None
 
 
-__all__ = ["fetch_candles", "ensure_initialized", "shutdown", "MT5NotAvailable"]
+__all__ = ["fetch_candles", "ensure_initialized", "shutdown", "MT5NotAvailable", "get_mt5_symbol", "SYMBOL_MAP"]

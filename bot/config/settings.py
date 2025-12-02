@@ -92,56 +92,17 @@ for directory in (LOGS_DIR, DATA_DIR, EXPORT_DIR):
     directory.mkdir(parents=True, exist_ok=True)
 
 SESSIONS: Tuple[SessionWindow, ...] = (
-    SessionWindow(name="London", start=time(hour=7), end=time(hour=10)),
-    SessionWindow(name="NewYork", start=time(hour=12), end=time(hour=16)),
+    # Times adjusted for MT5 server time (UTC+2 / GMT+2)
+    # Asian session: 0:00-7:00 UTC = 2:00-9:00 server time (Tokyo open to London open)
+    SessionWindow(name="Asian", start=time(hour=2), end=time(hour=9)),
+    # London session: 7:00-10:00 UTC = 9:00-12:00 server time
+    SessionWindow(name="London", start=time(hour=9), end=time(hour=12)),
+    # NewYork session: 12:00-21:00 UTC = 14:00-23:00 server time (extended to cover all NY trading)
+    SessionWindow(name="NewYork", start=time(hour=14), end=time(hour=23)),
 )
 
 ALLOWED_INSTRUMENTS: Dict[str, Instrument] = {
-    "XAUUSD+": Instrument(
-        symbol="XAUUSD+",
-        pip_value=1.0,
-        tick_size=0.1,
-        contract_size=100.0,
-        base_currency="USD",
-        liquidity_per_min=5_000_000,
-        margin_rate=0.02,
-    ),
-    "EURUSD+": Instrument(
-        symbol="EURUSD+",
-        pip_value=10.0,
-        tick_size=0.0001,
-        contract_size=100_000.0,
-        base_currency="USD",
-        liquidity_per_min=25_000_000,
-        margin_rate=0.02,
-    ),
-    "GBPUSD+": Instrument(
-        symbol="GBPUSD+",
-        pip_value=10.0,
-        tick_size=0.0001,
-        contract_size=100_000.0,
-        base_currency="USD",
-        liquidity_per_min=18_000_000,
-        margin_rate=0.02,
-    ),
-    "GBPJPY+": Instrument(
-        symbol="GBPJPY+",
-        pip_value=9.0,
-        tick_size=0.01,
-        contract_size=100_000.0,
-        base_currency="JPY",
-        liquidity_per_min=12_000_000,
-        margin_rate=0.03,
-    ),
-    "USDJPY+": Instrument(
-        symbol="USDJPY+",
-        pip_value=9.0,
-        tick_size=0.01,
-        contract_size=100_000.0,
-        base_currency="JPY",
-        liquidity_per_min=15_000_000,
-        margin_rate=0.02,
-    ),
+    # Profitable instruments with ICT/SMC strategy
     "BTCUSD": Instrument(
         symbol="BTCUSD",
         pip_value=5.0,
@@ -150,6 +111,51 @@ ALLOWED_INSTRUMENTS: Dict[str, Instrument] = {
         base_currency="USD",
         liquidity_per_min=2_000_000,
         margin_rate=0.1,
+    ),
+    "USDJPY": Instrument(
+        symbol="USDJPY",
+        pip_value=9.0,
+        tick_size=0.01,
+        contract_size=100_000.0,
+        base_currency="JPY",
+        liquidity_per_min=15_000_000,
+        margin_rate=0.02,
+    ),
+    "XAUUSD": Instrument(
+        symbol="XAUUSD",
+        pip_value=1.0,
+        tick_size=0.1,
+        contract_size=100.0,
+        base_currency="USD",
+        liquidity_per_min=5_000_000,
+        margin_rate=0.02,
+    ),
+    "GBPJPY": Instrument(
+        symbol="GBPJPY",
+        pip_value=9.0,
+        tick_size=0.01,
+        contract_size=100_000.0,
+        base_currency="JPY",
+        liquidity_per_min=12_000_000,
+        margin_rate=0.03,
+    ),
+    "EURUSD": Instrument(
+        symbol="EURUSD",
+        pip_value=10.0,
+        tick_size=0.0001,
+        contract_size=100_000.0,
+        base_currency="USD",
+        liquidity_per_min=25_000_000,
+        margin_rate=0.02,
+    ),
+    "GBPUSD": Instrument(
+        symbol="GBPUSD",
+        pip_value=10.0,
+        tick_size=0.0001,
+        contract_size=100_000.0,
+        base_currency="USD",
+        liquidity_per_min=18_000_000,
+        margin_rate=0.02,
     ),
 }
 

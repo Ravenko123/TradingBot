@@ -43,11 +43,16 @@ class PerformanceReport:
 
 
 def compute_performance(equity_curve: Sequence[float], trades: Sequence[TradeRecord]) -> PerformanceReport:
-    """Compute performance statistics from equity and trades."""
+    """Compute performance statistics from equity and trades.
+    
+    Note: Partial closes are included in PnL calculations but excluded from
+    trade count and win rate to avoid metric inflation.
+    """
 
     returns = np.diff(equity_curve) / equity_curve[:-1]
     sharpe = 0.0 if returns.size == 0 else (np.mean(returns) / (np.std(returns) + 1e-9)) * np.sqrt(252)
 
+    # Include ALL trades (including partials) for PnL
     gains = [t.pnl for t in trades if t.pnl > 0]
     losses = [-t.pnl for t in trades if t.pnl < 0]
     profit_factor = (sum(gains) / sum(losses)) if losses else float("inf")
@@ -60,10 +65,14 @@ def compute_performance(equity_curve: Sequence[float], trades: Sequence[TradeRec
         drawdown = (value - peak) / peak
         max_drawdown = min(max_drawdown, drawdown)
 
-    wins = sum(1 for t in trades if t.pnl > 0)
-    win_rate = (wins / len(trades) * 100) if trades else 0.0
+    # Filter out partial closes for win rate and trade count (avoid inflation)
+    full_trades = [t for t in trades if not getattr(t, 'is_partial', False)]
+    wins = sum(1 for t in full_trades if t.pnl > 0)
+    win_rate = (wins / len(full_trades) * 100) if full_trades else 0.0
 
     total_return = (equity_curve[-1] / equity_curve[0] - 1) * 100
+    
+    # Avg R includes all trades for accurate risk-adjusted view
     avg_r = float(np.mean([t.r_multiple for t in trades])) if trades else 0.0
 
     return PerformanceReport(
@@ -72,7 +81,7 @@ def compute_performance(equity_curve: Sequence[float], trades: Sequence[TradeRec
         profit_factor=profit_factor,
         max_drawdown_pct=abs(max_drawdown * 100),
         win_rate_pct=win_rate,
-        trade_count=len(trades),
+        trade_count=len(full_trades),  # Only count complete trades
         avg_r_multiple=avg_r,
     )
 

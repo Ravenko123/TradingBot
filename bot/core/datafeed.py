@@ -73,7 +73,7 @@ class MemoryDataFeed(BaseDataFeed):
         if not self._candles:
             raise DataFeedError("MemoryDataFeed requires at least one candle")
 
-    async def stream(self) -> AsyncIterator<Candle>:
+    async def stream(self) -> AsyncIterator[Candle]:
         while True:
             for candle in self._candles:
                 yield candle
