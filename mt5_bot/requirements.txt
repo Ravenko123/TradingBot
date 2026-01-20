@@ -1,0 +1,5 @@
+# Python Dependencies
+# Install with: pip install -r requirements.txt
+
+requests>=2.31.0
+MetaTrader5>=5.0.45

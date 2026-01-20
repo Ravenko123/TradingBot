@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EURUSD Trading Bot - Automated Forex Trading</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="container">
+            <div class="nav-brand">
+                <i class="fas fa-chart-line"></i>
+                <span>EURUSD Trading Bot</span>
+            </div>
+            <ul class="nav-menu">
+                <li><a href="#home" class="active">Home</a></li>
+                <li><a href="#features">Features</a></li>
+                <li><a href="#strategy">Strategy</a></li>
+                <li><a href="#performance">Performance</a></li>
+                <li><a href="dashboard.html">Dashboard</a></li>
+                <li><a href="docs.html">Docs</a></li>
+            </ul>
+            <a href="dashboard.html" class="btn btn-primary">Launch Dashboard</a>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section id="home" class="hero">
+        <div class="hero-background">
+            <div class="chart-lines"></div>
+        </div>
+        <div class="container">
+            <div class="hero-content">
+                <div class="hero-badge">
+                    <i class="fas fa-robot"></i>
+                    <span>Automated Forex Trading</span>
+                </div>
+                <h1 class="hero-title">
+                    Intelligent<br>
+                    <span class="gradient-text">EURUSD Trading Bot</span>
+                </h1>
+                <p class="hero-description">
+                    Automated trend-following trading on EURUSD M15 with EMA crossover + RSI confluence. Real-time backtesting, grid search optimization, and professional risk management.
+                </p>
+                <div class="hero-buttons">
+                    <a href="dashboard.html" class="btn btn-primary btn-lg">
+                        Open Dashboard
+                        <i class="fas fa-arrow-right"></i>
+                    </a>
+                    <a href="#performance" class="btn btn-outline btn-lg">
+                        View Stats
+                    </a>
+                </div>
+                <div class="hero-stats">
+                    <div class="stat-item">
+                        <div class="stat-value">4.0:1</div>
+                        <div class="stat-label">Risk/Reward Ratio</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">19.5%</div>
+                        <div class="stat-label">Win Rate (60d)</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">251</div>
+                        <div class="stat-label">Trades in 60d</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features">
+        <div class="container">
+            <div class="section-header">
+                <h2>Intelligent Trading Features</h2>
+                <p>Professional-grade tools for automated forex trading</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <h3>EMA Crossover + RSI</h3>
+                    <p>Dual-confirmation trend strategy. Fast EMA (20-50) crosses Slow EMA (100-200) with RSI(14) >50 buy / <50 sell on neutral levels. Filters: ATR volatility, EMA gap, session hours.</p>
+                    <a href="dashboard.html" class="feature-link">View Strategy <i class="fas fa-arrow-right"></i></a>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-sliders-h"></i>
+                    </div>
+                    <h3>Automatic Risk Management</h3>
+                    <p>Position sizing based on account equity (1% risk/trade). ATR-based SL/TP, breakeven stops, trailing stops, and daily drawdown monitoring. Max 1.0 lot per trade.</p>
+                    <a href="docs.html" class="feature-link">View Details <i class="fas fa-arrow-right"></i></a>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-cogs"></i>
+                    </div>
+                    <h3>Grid Search Optimizer</h3>
+                    <p>Test 64 parameter combinations over 180 days. Real-time progress tracking, automatic best-param selection, and scoring by Profit Factor.</p>
+                    <a href="dashboard.html" class="feature-link">Run Optimizer <i class="fas fa-arrow-right"></i></a>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-database"></i>
+                    </div>
+                    <h3>MT5 Live Backtesting</h3>
+                    <p>Event-driven simulator using real EURUSD M15 data from MetaTrader 5. Full trade logs, equity curves, and comprehensive statistics (PF, ROI, DD, Win%).</p>
+                    <a href="dashboard.html" class="feature-link">View Trades <i class="fas fa-arrow-right"></i></a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Strategy Section -->
+    <section id="strategy" class="strategies">
+        <div class="container">
+            <div class="section-header">
+                <h2>EMA Crossover Strategy</h2>
+                <p>Proven trend-following methodology for EURUSD M15</p>
+            </div>
+            <div class="strategies-grid">
+                <div class="strategy-card">
+                    <div class="strategy-header">
+                        <div class="strategy-icon gradient-bg-1">
+                            <i class="fas fa-chart-area"></i>
+                        </div>
+                        <h3>Entry Signals</h3>
+                    </div>
+                    <p>Fast EMA (20-50) crosses above/below Slow EMA (100-200). RSI confirmation prevents false signals in choppy markets.</p>
+                    <div class="strategy-metrics">
+                        <div class="metric">
+                            <span class="metric-label">Fast EMA</span>
+                            <span class="metric-value">20-50</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Slow EMA</span>
+                            <span class="metric-value">100-200</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="strategy-card">
+                    <div class="strategy-header">
+                        <div class="strategy-icon gradient-bg-2">
+                            <i class="fas fa-shield-alt"></i>
+                        </div>
+                        <h3>Risk Controls</h3>
+                    </div>
+                    <p>ATR-based stop-loss (1.1× ATR), 1:4 risk-reward ratio, position sizing via 1% account risk. Breakeven moves at 1.0R.</p>
+                    <div class="strategy-metrics">
+                        <div class="metric">
+                            <span class="metric-label">Risk per Trade</span>
+                            <span class="metric-value">1%</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Risk:Reward</span>
+                            <span class="metric-value">1:4</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="strategy-card">
+                    <div class="strategy-header">
+                        <div class="strategy-icon gradient-bg-3">
+                            <i class="fas fa-filter"></i>
+                        </div>
+                        <h3>Quality Filters</h3>
+                    </div>
+                    <p>Cooldown period between trades, session hours (07:00-22:00 UTC), EMA gap confirmation, and ATR volatility filter.</p>
+                    <div class="strategy-metrics">
+                        <div class="metric">
+                            <span class="metric-label">Session Hours</span>
+                            <span class="metric-value">07:00-22:00 UTC</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Min ATR</span>
+                            <span class="metric-value">3 pips</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Performance Section -->
+    <section id="performance" class="performance">
+        <div class="container">
+            <div class="section-header">
+                <h2>Live Backtest Results</h2>
+                <p>Verified performance from real EURUSD M15 data (October 2025 - January 2026)</p>
+            </div>
+            <div class="performance-grid">
+                <div class="performance-card">
+                    <div class="performance-header">
+                        <h3>60-Day Test Period (Oct 16 - Jan 9, 2026)</h3>
+                        <span class="badge badge-info">LATEST RUN</span>
+                    </div>
+                    <div class="performance-chart">
+                        <div class="chart-placeholder">
+                            <i class="fas fa-chart-line"></i>
+                            <p>Equity Curve: $9,944 Final Balance</p>
+                        </div>
+                    </div>
+                    <div class="performance-stats">
+                        <div class="stat">
+                            <span class="stat-label">Total Trades</span>
+                            <span class="stat-value positive">251</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Win Rate</span>
+                            <span class="stat-value">19.5%</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Profit Factor</span>
+                            <span class="stat-value warning">0.99 (Breakeven)</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">ROI</span>
+                            <span class="stat-value warning">-0.56%</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Max Drawdown</span>
+                            <span class="stat-value">28.9%</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Avg Win:Loss</span>
+                            <span class="stat-value positive">$25.79 : $6.32</span>
+                        </div>
+                    </div>
+                    <div class="performance-config">
+                        <h4>Optimized Parameters</h4>
+                        <div class="config-tags">
+                            <span class="tag">EMA 20/200</span>
+                            <span class="tag">RSI 50/50</span>
+                            <span class="tag">SL 15p | TP 60p</span>
+                            <span class="tag">1:4 Risk:Reward</span>
+                            <span class="tag">Gap 2p | CD 2b</span>
+                        </div>
+                    </div>
+                    <div class="performance-note">
+                        <p><strong>Note:</strong> Market was range-bound Oct-Jan. Strategy performs best in trending conditions (target PF > 1.2 when market trends 3+ days).</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta">
+        <div class="container">
+            <div class="cta-content">
+                <h2>Test the EURUSD M15 Strategy</h2>
+                <p>Run backtests, optimize parameters, and explore grid search results in real-time</p>
+                <a href="dashboard.html" class="btn btn-primary btn-lg">
+                    Launch Backtester
+                    <i class="fas fa-chart-bar"></i>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <div class="nav-brand">
+                        <i class="fas fa-chart-line"></i>
+                        <span>EURUSD Trading Bot</span>
+                    </div>
+                    <p>Automated EMA crossover trading system with RSI confirmation and grid-search optimization for EURUSD M15.</p>
+                </div>
+                <div class="footer-links">
+                    <div class="footer-column">
+                        <h4>Product</h4>
+                        <ul>
+                            <li><a href="#features">Features</a></li>
+                            <li><a href="#strategy">Strategy</a></li>
+                            <li><a href="dashboard.html">Dashboard</a></li>
+                            <li><a href="#performance">Performance</a></li>
+                        </ul>
+                    </div>
+                    <div class="footer-column">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="docs.html">Documentation</a></li>
+                            <li><a href="docs.html#backtest">Backtest Guide</a></li>
+                            <li><a href="docs.html#indicators">Indicators</a></li>
+                            <li><a href="about.html">About</a></li>
+                        </ul>
+                    </div>
+                    <div class="footer-column">
+                        <h4>Connect</h4>
+                        <ul>
+                            <li><a href="https://github.com/Ravenko123/TradingBot" target="_blank"><i class="fab fa-github"></i> GitHub</a></li>
+                            <li><a href="#"><i class="fab fa-telegram"></i> Telegram</a></li>
+                            <li><a href="#"><i class="fab fa-discord"></i> Discord</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2025 EURUSD Trading Bot. Built for educational purposes.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>

@@ -1,9 +1,0 @@
-2025-11-18 01:04:50 | INFO | system | Backtest complete | {'total_return_pct': 0.0, 'sharpe_ratio': np.float64(0.0), 'profit_factor': inf, 'max_drawdown_pct': 0.0, 'win_rate_pct': 0.0, 'trade_count': 0}
-2025-11-18 01:20:02 | INFO | system | Backtest complete | {'total_return_pct': 0.0, 'sharpe_ratio': np.float64(0.0), 'profit_factor': inf, 'max_drawdown_pct': 0.0, 'win_rate_pct': 0.0, 'trade_count': 0}
-2025-11-18 01:44:09 | INFO | system | Backtest complete | {'total_return_pct': 0.0, 'sharpe_ratio': np.float64(0.0), 'profit_factor': inf, 'max_drawdown_pct': 0.0, 'win_rate_pct': 0.0, 'trade_count': 0, 'avg_r_multiple': 0.0}
-2025-11-18 01:46:56 | INFO | system | Backtest complete | {'total_return_pct': 0.0, 'sharpe_ratio': np.float64(0.0), 'profit_factor': inf, 'max_drawdown_pct': 0.0, 'win_rate_pct': 0.0, 'trade_count': 0, 'avg_r_multiple': 0.0}
-2025-11-18 01:52:40 | INFO | system | Backtest complete | {'total_return_pct': 0.0, 'sharpe_ratio': np.float64(0.0), 'profit_factor': inf, 'max_drawdown_pct': 0.0, 'win_rate_pct': 0.0, 'trade_count': 0, 'avg_r_multiple': 0.0}
-2025-11-18 01:53:37 | INFO | system | Backtest complete | {'total_return_pct': 0.0, 'sharpe_ratio': np.float64(0.0), 'profit_factor': inf, 'max_drawdown_pct': 0.0, 'win_rate_pct': 0.0, 'trade_count': 0, 'avg_r_multiple': 0.0}
-2025-11-18 01:53:50 | INFO | system | Backtest complete | {'total_return_pct': 0.0, 'sharpe_ratio': np.float64(0.0), 'profit_factor': inf, 'max_drawdown_pct': 0.0, 'win_rate_pct': 0.0, 'trade_count': 0, 'avg_r_multiple': 0.0}
-2025-11-18 02:16:18 | INFO | system | Backtest complete | {'total_return_pct': 0.0, 'sharpe_ratio': np.float64(0.0), 'profit_factor': inf, 'max_drawdown_pct': 0.0, 'win_rate_pct': 0.0, 'trade_count': 0, 'avg_r_multiple': 0.0}
-2025-11-18 02:16:18 | INFO | system | Backtest CLI finished | instrument=EURUSD strategy=ict_smc

@@ -1,0 +1,36 @@
+<svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00d9ff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0099cc;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Main U shape - solid and bold -->
+  <path d="M 120 100 L 120 220 Q 120 280 160 300 L 240 300 Q 280 280 280 220 L 280 100 L 240 100 L 240 220 Q 240 250 220 260 L 180 260 Q 160 250 160 220 L 160 100 Z" 
+        fill="url(#blueGrad)"/>
+
+  <!-- Left swoosh curve -->
+  <path d="M 90 140 Q 50 170 60 220 Q 70 280 130 320" 
+        fill="none" 
+        stroke="url(#blueGrad)" 
+        stroke-width="25" 
+        stroke-linecap="round"
+        opacity="0.8"/>
+
+  <!-- Right swoosh curve -->
+  <path d="M 310 140 Q 350 170 340 220 Q 330 280 270 320" 
+        fill="none" 
+        stroke="url(#blueGrad)" 
+        stroke-width="25" 
+        stroke-linecap="round"
+        opacity="0.8"/>
+
+  <!-- Bottom flow -->
+  <path d="M 140 340 Q 200 360 260 340" 
+        fill="none" 
+        stroke="url(#blueGrad)" 
+        stroke-width="22" 
+        stroke-linecap="round"
+        opacity="0.7"/>
+</svg>

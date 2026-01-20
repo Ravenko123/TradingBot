@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentation - EURUSD Trading Bot</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/docs.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="container">
+            <a href="index.html" class="logo">EURUSD<span>Trading</span></a>
+            <ul class="nav-menu">
+                <li><a href="index.html">Home</a></li>
+                <li><a href="dashboard.html">Dashboard</a></li>
+                <li><a href="docs.html" class="active">Docs</a></li>
+                <li><a href="about.html">About</a></li>
+                <li><a href="dashboard.html" class="btn btn-primary">Launch App</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Documentation Layout -->
+    <div class="docs-layout">
+        <!-- Sidebar -->
+        <aside class="docs-sidebar">
+            <div class="sidebar-content">
+                <h3>Documentation</h3>
+                <ul class="docs-menu">
+                    <li class="active"><a href="#getting-started">Getting Started</a></li>
+                    <li><a href="#strategy">Strategy Overview</a></li>
+                    <li><a href="#installation">Installation</a></li>
+                    <li><a href="#backtesting">Backtesting</a></li>
+                    <li><a href="#optimization">Optimization</a></li>
+                    <li><a href="#results">Results Analysis</a></li>
+                    <li><a href="#api-reference">API Reference</a></li>
+                    <li><a href="#troubleshooting">Troubleshooting</a></li>
+                </ul>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="docs-content">
+            <section id="getting-started" class="doc-section">
+                <h1>Getting Started</h1>
+                <p class="lead">Welcome to the EURUSD Trading Bot documentation. This guide covers the EMA crossover strategy, backtesting engine, and optimization framework.</p>
+                
+                <div class="alert alert-info">
+                    <strong>Note:</strong> This is an educational project created for learning purposes. Always test thoroughly before using with real money.
+                </div>
+
+                <h2>What is EURUSD Trading Bot?</h2>
+                <p>EURUSD Trading Bot is an algorithmic trading system that implements a trend-following EMA crossover strategy on the EURUSD M15 timeframe. The system features:</p>
+                <ul>
+                    <li>EMA crossover with RSI confirmation</li>
+                    <li>Professional backtesting engine with real MT5 data</li>
+                    <li>Grid search optimization (64+ parameters)</li>
+                    <li>Real-time performance monitoring and analysis</li>
+                    <li>Risk management and position sizing</li>
+                    <li>Telegram bot integration for remote control</li>
+                </ul>
+            </section>
+
+            <section id="installation" class="doc-section">
+                <h1>Installation</h1>
+                
+                <h2>Prerequisites</h2>
+                <ul>
+                    <li>Python 3.8 or higher</li>
+                    <li>MetaTrader 5 (for live trading)</li>
+                    <li>MT5 account with broker support for algorithmic trading</li>
+                </ul>
+
+                <h2>Step 1: Clone the Repository</h2>
+                <div class="code-block">
+                    <pre><code>git clone https://github.com/yourusername/tradingbot.git
+cd tradingbot</code></pre>
+                </div>
+
+                <h2>Step 2: Install Dependencies</h2>
+                <div class="code-block">
+                    <pre><code>pip install -r requirements.txt</code></pre>
+                </div>
+
+                <h3>Required Packages:</h3>
+                <ul>
+                    <li><code>MetaTrader5</code> - MT5 Python integration</li>
+                    <li><code>pandas</code> - Data manipulation</li>
+                    <li><code>numpy</code> - Numerical computations</li>
+                    <li><code>ta</code> - Technical analysis indicators</li>
+                    <li><code>python-telegram-bot</code> - Telegram integration</li>
+                    <li><code>flask</code> - Web API backend</li>
+                    <li><code>flask-cors</code> - CORS support</li>
+                </ul>
+
+                <h2>Step 3: Configure MT5 Connection</h2>
+                <p>Edit <code>config/settings.py</code> with your MT5 credentials:</p>
+                <div class="code-block">
+                    <pre><code>SETTINGS = {
+    "mt5": {
+        "login": 123456789,
+        "password": "your_password",
+        "server": "YourBroker-Demo"
+    }
+}</code></pre>
+                </div>
+            </section>
+
+            <section id="configuration" class="doc-section">
+                <h1>Configuration</h1>
+                
+                <h2>Strategy Configuration</h2>
+                <p>Edit <code>config/strategy_config.py</code> to configure strategy parameters for each instrument.</p>
+
+                <h3>Grid Strategy Example:</h3>
+                <div class="code-block">
+                    <pre><code>"BTCUSD": {
+    "grid_levels": 15,           # Number of grid levels
+    "use_atr_spacing": True,     # Use dynamic ATR spacing
+    "atr_spacing_mult": 0.5,     # ATR multiplier for spacing
+    "sl_multiplier": 6,          # Stop loss = 6 * grid spacing
+    "max_positions": 15,         # Maximum concurrent positions
+    "risk_per_trade": 10.0,      # % of account per trade
+    "atr_period": 14,            # ATR calculation period
+    "atr_timeframe": "M5"        # Timeframe for ATR
+}</code></pre>
+                </div>
+
+                <h2>Risk Management</h2>
+                <p>Configure risk parameters in <code>config/settings.py</code>:</p>
+                <ul>
+                    <li><strong>Max Daily Loss:</strong> Maximum loss per day before stopping</li>
+                    <li><strong>Max Position Size:</strong> Maximum percentage of account per position</li>
+                    <li><strong>Max Open Trades:</strong> Maximum number of concurrent trades</li>
+                </ul>
+
+                <h2>Telegram Bot Setup</h2>
+                <ol>
+                    <li>Create a bot using @BotFather on Telegram</li>
+                    <li>Get your bot token and chat ID</li>
+                    <li>Add to <code>telegram_settings.json</code></li>
+                </ol>
+                <div class="code-block">
+                    <pre><code>{
+    "telegram_token": "YOUR_BOT_TOKEN",
+    "chat_id": "YOUR_CHAT_ID"
+}</code></pre>
+                </div>
+            </section>
+
+            <section id="strategies" class="doc-section">
+                <h1>Trading Strategies</h1>
+
+                <h2>1. Grid Trading Strategy</h2>
+                <p>Grid trading is a mean-reversion strategy that places buy and sell orders at regular intervals around a base price.</p>
+                
+                <h3>How It Works:</h3>
+                <ol>
+                    <li>Calculate grid spacing using ATR or fixed pips</li>
+                    <li>Place buy orders below current price</li>
+                    <li>Place sell orders above current price</li>
+                    <li>Take profit at next grid level</li>
+                    <li>Use stop loss for risk management</li>
+                </ol>
+
+                <h3>Best For:</h3>
+                <ul>
+                    <li>Range-bound markets</li>
+                    <li>High volatility instruments (BTCUSD)</li>
+                    <li>24/7 automated trading</li>
+                </ul>
+
+                <h3>Performance:</h3>
+                <div class="performance-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Timeframe</th>
+                                <th>Return</th>
+                                <th>Win Rate</th>
+                                <th>Sharpe</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>BTCUSD</td>
+                                <td>M5</td>
+                                <td>16,473%</td>
+                                <td>79.3%</td>
+                                <td>3.31</td>
+                            </tr>
+                            <tr>
+                                <td>EURUSD</td>
+                                <td>M5</td>
+                                <td>1,513%</td>
+                                <td>87.5%</td>
+                                <td>2.85</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <h2>2. ICT/SMC Strategy</h2>
+                <p>Inner Circle Trader and Smart Money Concepts strategy identifies institutional order blocks and liquidity zones.</p>
+                
+                <h3>Key Concepts:</h3>
+                <ul>
+                    <li><strong>Order Blocks:</strong> Areas where institutions have placed large orders</li>
+                    <li><strong>Fair Value Gaps:</strong> Imbalances in price action</li>
+                    <li><strong>Liquidity Sweeps:</strong> Stop-loss hunting patterns</li>
+                    <li><strong>Break of Structure:</strong> Trend change confirmations</li>
+                </ul>
+
+                <h2>3. HFT Scalper Strategy</h2>
+                <p>High-frequency trading scalping strategy for quick profits in volatile markets.</p>
+                
+                <h3>Features:</h3>
+                <ul>
+                    <li>Multiple timeframe analysis</li>
+                    <li>Momentum-based entries</li>
+                    <li>Tight stop losses</li>
+                    <li>High win rate, small targets</li>
+                </ul>
+
+                <h2>4. Mean Reversion Strategy</h2>
+                <p>Trades based on price returning to its mean after extreme moves.</p>
+                
+                <h3>Indicators Used:</h3>
+                <ul>
+                    <li>Bollinger Bands</li>
+                    <li>RSI (Relative Strength Index)</li>
+                    <li>Standard Deviation</li>
+                </ul>
+            </section>
+
+            <section id="backtesting" class="doc-section">
+                <h1>Backtesting</h1>
+                
+                <h2>Running a Backtest</h2>
+                <p>Test your strategy with historical data before risking real money:</p>
+
+                <div class="code-block">
+                    <pre><code>python verify_backtest.py --symbol BTCUSD --strategy grid --start-date 2025-12-10 --end-date 2025-12-16</code></pre>
+                </div>
+
+                <h2>Backtest Parameters</h2>
+                <ul>
+                    <li><code>--symbol</code>: Trading symbol (e.g., BTCUSD, EURUSD)</li>
+                    <li><code>--strategy</code>: Strategy name (grid, ict_smc, hft_scalper)</li>
+                    <li><code>--start-date</code>: Backtest start date (YYYY-MM-DD)</li>
+                    <li><code>--end-date</code>: Backtest end date (YYYY-MM-DD)</li>
+                    <li><code>--timeframe</code>: Bar timeframe (M1, M5, M15, H1, H4, D1)</li>
+                    <li><code>--initial-balance</code>: Starting account balance</li>
+                </ul>
+
+                <h2>Understanding Results</h2>
+                <p>The backtest engine generates comprehensive metrics:</p>
+                
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <h4>Total Return</h4>
+                        <p>Overall profit/loss percentage from initial balance</p>
+                    </div>
+                    <div class="metric-card">
+                        <h4>Sharpe Ratio</h4>
+                        <p>Risk-adjusted return. Higher is better (>1.0 is good)</p>
+                    </div>
+                    <div class="metric-card">
+                        <h4>Max Drawdown</h4>
+                        <p>Largest peak-to-trough decline. Lower is better</p>
+                    </div>
+                    <div class="metric-card">
+                        <h4>Win Rate</h4>
+                        <p>Percentage of profitable trades</p>
+                    </div>
+                    <div class="metric-card">
+                        <h4>Profit Factor</h4>
+                        <p>Gross profit / Gross loss. Should be >1.5</p>
+                    </div>
+                    <div class="metric-card">
+                        <h4>Average Win/Loss</h4>
+                        <p>Average profit vs average loss per trade</p>
+                    </div>
+                </div>
+
+                <h2>Optimizing Parameters</h2>
+                <p>Use the parameter sweep script to find optimal settings:</p>
+                <div class="code-block">
+                    <pre><code>python scripts/sweep_btc_grid.py</code></pre>
+                </div>
+            </section>
+
+            <section id="live-trading" class="doc-section">
+                <h1>Live Trading</h1>
+                
+                <div class="alert alert-warning">
+                    <strong>Warning:</strong> Always start with a demo account! Test thoroughly before using real money.
+                </div>
+
+                <h2>Starting the Bot</h2>
+                <div class="code-block">
+                    <pre><code>python main.py</code></pre>
+                </div>
+
+                <h2>Monitoring</h2>
+                <p>Monitor your bot through multiple interfaces:</p>
+                <ul>
+                    <li><strong>Web Dashboard:</strong> Real-time metrics and charts</li>
+                    <li><strong>Telegram Bot:</strong> Mobile notifications and remote control</li>
+                    <li><strong>MT5 Terminal:</strong> Direct view of trades and positions</li>
+                    <li><strong>Log Files:</strong> Detailed execution logs in <code>logs/</code></li>
+                </ul>
+
+                <h2>Telegram Commands</h2>
+                <div class="code-block">
+                    <pre><code>/start - Start the bot
+/stop - Stop the bot
+/status - Get current status
+/balance - Check account balance
+/trades - View recent trades
+/metrics - Performance metrics</code></pre>
+                </div>
+
+                <h2>Emergency Stop</h2>
+                <p>To immediately stop all trading:</p>
+                <ol>
+                    <li>Send <code>/stop</code> via Telegram, or</li>
+                    <li>Press Ctrl+C in the terminal, or</li>
+                    <li>Click "Stop Bot" in the web dashboard</li>
+                </ol>
+            </section>
+
+            <section id="api-reference" class="doc-section">
+                <h1>API Reference</h1>
+                
+                <p>The Ultima API provides programmatic access to bot data and controls.</p>
+
+                <h2>Base URL</h2>
+                <div class="code-block">
+                    <pre><code>http://localhost:5000/api</code></pre>
+                </div>
+
+                <h2>Endpoints</h2>
+
+                <div class="endpoint">
+                    <h3><span class="method get">GET</span> /status</h3>
+                    <p>Get current bot status</p>
+                    <h4>Response:</h4>
+                    <div class="code-block">
+                        <pre><code>{
+    "status": "running",
+    "active_strategy": "grid",
+    "timestamp": "2025-12-18T10:30:00"
+}</code></pre>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <h3><span class="method get">GET</span> /metrics</h3>
+                    <p>Get performance metrics</p>
+                    <h4>Response:</h4>
+                    <div class="code-block">
+                        <pre><code>{
+    "balance": 15473.20,
+    "pnl": 5473.20,
+    "pnl_percentage": 54.73,
+    "win_rate": 79.3,
+    "total_trades": 156,
+    "sharpe_ratio": 3.31,
+    "profit_factor": 2.45,
+    "max_drawdown": 22.4
+}</code></pre>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <h3><span class="method get">GET</span> /equity</h3>
+                    <p>Get equity curve data</p>
+                    <h4>Response:</h4>
+                    <div class="code-block">
+                        <pre><code>{
+    "labels": ["2025-12-01", "2025-12-02", ...],
+    "data": [10000, 10250, 10580, ...]
+}</code></pre>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <h3><span class="method get">GET</span> /trades</h3>
+                    <p>Get trade history</p>
+                    <h4>Parameters:</h4>
+                    <ul>
+                        <li><code>limit</code> (optional): Number of trades to return (default: 50)</li>
+                    </ul>
+                    <h4>Response:</h4>
+                    <div class="code-block">
+                        <pre><code>[
+    {
+        "symbol": "BTCUSD",
+        "type": "BUY",
+        "entry_price": 42150.50,
+        "exit_price": 42250.75,
+        "quantity": 0.1,
+        "pnl": 10.03,
+        "timestamp": "2025-12-18T10:25:00"
+    },
+    ...
+]</code></pre>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <h3><span class="method post">POST</span> /bot/start</h3>
+                    <p>Start the trading bot</p>
+                    <h4>Request Body:</h4>
+                    <div class="code-block">
+                        <pre><code>{
+    "strategy": "grid"
+}</code></pre>
+                    </div>
+                    <h4>Response:</h4>
+                    <div class="code-block">
+                        <pre><code>{
+    "success": true,
+    "message": "Bot started with grid strategy"
+}</code></pre>
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <h3><span class="method post">POST</span> /bot/stop</h3>
+                    <p>Stop the trading bot</p>
+                    <h4>Response:</h4>
+                    <div class="code-block">
+                        <pre><code>{
+    "success": true,
+    "message": "Bot stopped successfully"
+}</code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <section id="troubleshooting" class="doc-section">
+                <h1>Troubleshooting</h1>
+
+                <h2>Common Issues</h2>
+
+                <div class="troubleshoot-item">
+                    <h3>Bot won't connect to MT5</h3>
+                    <p><strong>Symptoms:</strong> "MT5 initialization failed" error</p>
+                    <p><strong>Solutions:</strong></p>
+                    <ul>
+                        <li>Ensure MT5 terminal is running</li>
+                        <li>Check credentials in <code>config/settings.py</code></li>
+                        <li>Verify MT5 allows algorithmic trading (Tools > Options > Expert Advisors)</li>
+                        <li>Check if your broker supports API trading</li>
+                    </ul>
+                </div>
+
+                <div class="troubleshoot-item">
+                    <h3>No trades being placed</h3>
+                    <p><strong>Symptoms:</strong> Bot runs but doesn't place orders</p>
+                    <p><strong>Solutions:</strong></p>
+                    <ul>
+                        <li>Check market hours (some instruments only trade certain times)</li>
+                        <li>Verify sufficient account balance</li>
+                        <li>Check strategy filters in <code>strategy_config.py</code></li>
+                        <li>Review logs in <code>logs/system.log</code> for details</li>
+                    </ul>
+                </div>
+
+                <div class="troubleshoot-item">
+                    <h3>Dashboard shows no data</h3>
+                    <p><strong>Symptoms:</strong> Empty charts and tables</p>
+                    <p><strong>Solutions:</strong></p>
+                    <ul>
+                        <li>Ensure API backend is running: <code>python web/api.py</code></li>
+                        <li>Check CORS settings in <code>api.py</code></li>
+                        <li>Verify <code>trades.csv</code> exists and has data</li>
+                        <li>Check browser console for JavaScript errors</li>
+                    </ul>
+                </div>
+
+                <div class="troubleshoot-item">
+                    <h3>Backtest results don't match live trading</h3>
+                    <p><strong>Symptoms:</strong> Different performance between backtest and live</p>
+                    <p><strong>Reasons:</strong></p>
+                    <ul>
+                        <li>Slippage and commissions not accounted for in backtest</li>
+                        <li>Market conditions changed</li>
+                        <li>Different data quality (historical vs live)</li>
+                        <li>Look-ahead bias in backtest</li>
+                    </ul>
+                    <p><strong>Solutions:</strong></p>
+                    <ul>
+                        <li>Add realistic slippage/commission in backtest settings</li>
+                        <li>Test on recent data that matches current conditions</li>
+                        <li>Use demo account first to validate results</li>
+                    </ul>
+                </div>
+
+                <h2>Getting Help</h2>
+                <p>If you're still experiencing issues:</p>
+                <ul>
+                    <li>Check log files in <code>logs/</code> directory</li>
+                    <li>Review GitHub Issues for similar problems</li>
+                    <li>Join our Discord community for support</li>
+                    <li>Contact: support@tradingbot.com</li>
+                </ul>
+            </section>
+        </main>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2025 Ultima. Academic Project - For Educational Purposes Only.</p>
+            <p><a href="#getting-started">Documentation</a> | <a href="about.html">About</a> | <a href="https://github.com">GitHub</a></p>
+        </div>
+    </footer>
+</body>
+</html>

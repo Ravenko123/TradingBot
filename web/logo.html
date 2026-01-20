@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultima Logo - Brand Identity</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 50%, #16213e 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 40px;
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, #00d9ff, #0099cc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 2px;
+            font-weight: 700;
+        }
+
+        .logo-showcase {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 30px;
+            margin-bottom: 50px;
+        }
+
+        .logo-card {
+            background: rgba(26, 26, 46, 0.4);
+            border: 1px solid rgba(0, 217, 255, 0.1);
+            border-radius: 12px;
+            padding: 40px 30px;
+            text-align: center;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .logo-card:hover {
+            border-color: rgba(0, 217, 255, 0.3);
+            transform: translateY(-3px);
+            background: rgba(26, 26, 46, 0.6);
+        }
+
+        .logo-card h3 {
+            color: #00d9ff;
+            margin-bottom: 20px;
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .logo-display {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 30px 0;
+            min-height: 200px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .logo-display svg {
+            width: 100%;
+            max-width: 250px;
+            height: auto;
+        }
+
+        .logo-display img {
+            width: 100%;
+            max-width: 250px;
+            height: auto;
+        }
+
+        .logo-description {
+            font-size: 0.9rem;
+            line-height: 1.6;
+            color: #a0a0a0;
+            margin: 15px 0;
+        }
+
+        .features {
+            background: rgba(26, 26, 46, 0.4);
+            border: 1px solid rgba(0, 217, 255, 0.1);
+            border-radius: 12px;
+            padding: 40px;
+            margin: 40px 0;
+            backdrop-filter: blur(10px);
+        }
+
+        .features h2 {
+            color: #00d9ff;
+            margin-bottom: 30px;
+            font-size: 1.8rem;
+            font-weight: 700;
+        }
+
+        .feature-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .feature-item {
+            padding: 20px;
+            background: rgba(0, 217, 255, 0.02);
+            border-left: 3px solid #00d9ff;
+            border-radius: 6px;
+        }
+
+        .feature-item strong {
+            color: #00d9ff;
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.95rem;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 60px;
+            padding-top: 30px;
+            border-top: 1px solid rgba(0, 217, 255, 0.1);
+            color: #606060;
+            font-size: 0.85rem;
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.8rem;
+            }
+
+            .features {
+                padding: 20px;
+            }
+
+            .logo-display {
+                min-height: 150px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ULTIMA Brand Logo</h1>
+
+        <div class="logo-showcase">
+            <!-- Primary Logo -->
+            <div class="logo-card">
+                <h3>ULTIMA Logo</h3>
+                <div class="logo-display">
+                    <svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+                        <defs>
+                            <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" style="stop-color:#00d9ff;stop-opacity:1" />
+                                <stop offset="100%" style="stop-color:#0099cc;stop-opacity:1" />
+                            </linearGradient>
+                        </defs>
+                        <path d="M 120 100 L 120 220 Q 120 280 160 300 L 240 300 Q 280 280 280 220 L 280 100 L 240 100 L 240 220 Q 240 250 220 260 L 180 260 Q 160 250 160 220 L 160 100 Z" fill="url(#blueGrad)"/>
+                        <path d="M 90 140 Q 50 170 60 220 Q 70 280 130 320" fill="none" stroke="url(#blueGrad)" stroke-width="25" stroke-linecap="round" opacity="0.8"/>
+                        <path d="M 310 140 Q 350 170 340 220 Q 330 280 270 320" fill="none" stroke="url(#blueGrad)" stroke-width="25" stroke-linecap="round" opacity="0.8"/>
+                        <path d="M 140 340 Q 200 360 260 340" fill="none" stroke="url(#blueGrad)" stroke-width="22" stroke-linecap="round" opacity="0.7"/>
+                    </svg>
+                </div>
+                <p class="logo-description">Bold U with flowing curves - represents dynamic trading</p>
+            </div>
+        </div>
+
+        <!-- Why This Design -->
+        <div class="features">
+            <h2>Dynamic & Professional</h2>
+            <div class="feature-list">
+                <div class="feature-item">
+                    <strong>Bold Letter Form</strong>
+                    Strong "U" shape represents Ultima with confidence
+                </div>
+                <div class="feature-item">
+                    <strong>Flow & Movement</strong>
+                    Curved swooshes suggest market dynamics and trading flow
+                </div>
+                <div class="feature-item">
+                    <strong>Premium Blue Gradient</strong>
+                    Your signature cyan colors in a rich gradient
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>© 2025 Ultima - Professional AI Trading System</p>
+        </footer>
+    </div>
+</body>
+</html>
