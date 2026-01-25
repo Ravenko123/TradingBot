@@ -1,0 +1,7 @@
+{
+  "risk_percent": 5.0,
+  "enabled_symbols": [
+    "BTCUSD",
+    "XAUUSD"
+  ]
+}

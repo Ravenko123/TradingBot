@@ -1,0 +1,47 @@
+{
+  "best_params": {
+    "ema": 50,
+    "rsi": 13
+  },
+  "in_sample": {
+    "ema": 50.0,
+    "rsi": 13.0,
+    "sharpe": 15.016385113008818,
+    "total_trades": 16.0,
+    "winning_trades": 14.0,
+    "losing_trades": 2.0,
+    "win_rate": 87.5,
+    "avg_win_pips": 19.428571428597415,
+    "avg_loss_pips": 24.50000000003638,
+    "profit_factor": 5.551020408162447,
+    "total_pnl_pips": 223.00000000029104,
+    "total_pnl_usd": 2230.0000000029104,
+    "roi": 22.300000000029105,
+    "max_drawdown": -2.4785027819967813,
+    "sharpe_ratio": 15.016385113008818,
+    "recovery_factor": 0.8997367346936496,
+    "total_pnl": NaN
+  },
+  "out_sample": {
+    "total_trades": 8,
+    "winning_trades": 6,
+    "losing_trades": 2,
+    "win_rate": 75.0,
+    "avg_win_pips": 20.50000000003638,
+    "avg_loss_pips": 20.75,
+    "profit_factor": 2.9638554216920068,
+    "total_pnl_pips": 81.50000000021828,
+    "total_pnl_usd": 815.0000000021828,
+    "roi": 8.150000000021826,
+    "max_drawdown": -2.215189873420501,
+    "sharpe_ratio": 9.004582545141382,
+    "recovery_factor": 0.3679142857148095,
+    "ema": 50,
+    "rsi": 13
+  },
+  "degradation": {
+    "win_rate_drop": 12.5,
+    "profit_factor_drop": 2.5871649864704405
+  },
+  "is_robust": "False"
+}

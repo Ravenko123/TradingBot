@@ -5,38 +5,57 @@ Educational Graduation Project 2026
 This simple script sends trading notifications to your Telegram chat.
 """
 
+import os
 import sys
+import json
 import requests
 from datetime import datetime
+from pathlib import Path
 
 # ============================================
-# CONFIGURATION - EDIT THESE VALUES
+# CONFIGURATION - LOAD FROM JSON
 # ============================================
-TELEGRAM_BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"  # Get from @BotFather on Telegram
-TELEGRAM_CHAT_ID = "YOUR_CHAT_ID_HERE"      # Get from @userinfobot on Telegram
+config_file = Path(__file__).parent / 'telegram_config.json'
+if config_file.exists():
+    with open(config_file, 'r') as f:
+        config = json.load(f)
+    TELEGRAM_BOT_TOKEN = config.get('bot_token', 'YOUR_BOT_TOKEN_HERE')
+    TELEGRAM_CHAT_ID = config.get('chat_id', 'YOUR_CHAT_ID_HERE')
+else:
+    TELEGRAM_BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
+    TELEGRAM_CHAT_ID = "YOUR_CHAT_ID_HERE"
 
 # ============================================
 # SCRIPT LOGIC (No need to modify below)
 # ============================================
 
-def send_telegram_message(message):
+# Track if we've already warned about missing config (avoid spam)
+_telegram_warning_shown = False
+
+def send_telegram_message(message, silent: bool = True):
     """
     Send a message to Telegram using the Bot API
     
     Args:
         message (str): Message text to send
+        silent (bool): If True, suppress error messages (default True)
     
     Returns:
         bool: True if successful, False otherwise
     """
+    global _telegram_warning_shown
     
     # Validate configuration
     if TELEGRAM_BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
-        print("❌ ERROR: Please configure your TELEGRAM_BOT_TOKEN in telegram_bot.py")
+        if not silent and not _telegram_warning_shown:
+            print("❌ ERROR: Please configure your TELEGRAM_BOT_TOKEN in telegram_bot.py")
+            _telegram_warning_shown = True
         return False
     
     if TELEGRAM_CHAT_ID == "YOUR_CHAT_ID_HERE":
-        print("❌ ERROR: Please configure your TELEGRAM_CHAT_ID in telegram_bot.py")
+        if not silent and not _telegram_warning_shown:
+            print("❌ ERROR: Please configure your TELEGRAM_CHAT_ID in telegram_bot.py")
+            _telegram_warning_shown = True
         return False
     
     # Build API URL
@@ -58,15 +77,15 @@ def send_telegram_message(message):
         response = requests.post(url, json=payload, timeout=10)
         
         if response.status_code == 200:
-            print(f"✅ Telegram message sent successfully!")
             return True
         else:
-            print(f"❌ Telegram API error: {response.status_code}")
-            print(f"Response: {response.text}")
+            if not silent:
+                print(f"❌ Telegram API error: {response.status_code}")
             return False
             
     except requests.exceptions.RequestException as e:
-        print(f"❌ Connection error: {e}")
+        if not silent:
+            print(f"❌ Connection error: {e}")
         return False
 
 
