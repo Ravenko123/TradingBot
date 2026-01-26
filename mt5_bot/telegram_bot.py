@@ -68,8 +68,7 @@ def send_telegram_message(message, silent: bool = True):
     # Prepare request payload
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "text": full_message,
-        "parse_mode": "HTML"
+        "text": full_message
     }
     
     try:
@@ -81,6 +80,10 @@ def send_telegram_message(message, silent: bool = True):
         else:
             if not silent:
                 print(f"❌ Telegram API error: {response.status_code}")
+                try:
+                    print(response.text)
+                except Exception:
+                    pass
             return False
             
     except requests.exceptions.RequestException as e:

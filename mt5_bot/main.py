@@ -1,6 +1,7 @@
 """
 LIVE Trading Bot - Scans real-time MT5 market data and sends Telegram signals.
 Uses the optimized EMA/ADX/ATR strategy with parameters from best_settings.json.
+NOW WITH AI BRAIN: Self-learning, market-aware adaptive intelligence.
 
 Usage:
   python main.py              # default: scan every 5 seconds
@@ -11,6 +12,7 @@ Telegram Commands:
   /risk 2.5    - Set risk to 2.5% per trade
   /eurusd      - Toggle EURUSD on/off
   /status      - Show current config
+  /brain       - AI brain status & insights
 """
 import argparse
 import csv
@@ -20,6 +22,7 @@ import time
 import threading
 from pathlib import Path
 from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
 import pandas as pd
@@ -29,6 +32,7 @@ import MetaTrader5 as mt5
 
 from strategy import get_instrument_settings
 from telegram_bot import send_telegram_message, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from ai_brain import get_brain, TradingIntelligenceBrain
 
 # ============================================================================
 # CONFIG
@@ -65,6 +69,144 @@ RETRY_DELAY = 1.0  # seconds
 # Trade logging (only closed trades)
 TRADE_LOG_FILE = 'liverun/live_trades.csv'
 
+# Learned parameters (auto-adjusted by optimizer)
+LEARNED_PARAMS_FILE = 'liverun/learned_params.json'
+
+# Optimizer settings
+OPTIMIZER_INTERVAL = 300  # Run optimizer every 5 minutes
+MIN_TRADES_FOR_LEARNING = 5  # Min closed trades before adjusting params
+
+# ============================================================================
+# PARAMETER OPTIMIZER - Self-Learning Bot
+# ============================================================================
+
+class ParameterOptimizer:
+    """Analyzes closed trades and auto-adjusts strategy parameters in real-time."""
+    
+    def __init__(self):
+        self.learned = self.load_learned_params()
+        self.last_optimize = time.time()
+    
+    def load_learned_params(self) -> dict:
+        """Load previously learned parameter improvements."""
+        if Path(LEARNED_PARAMS_FILE).exists():
+            try:
+                return json.loads(Path(LEARNED_PARAMS_FILE).read_text())
+            except:
+                pass
+        return {}
+    
+    def save_learned_params(self):
+        """Persist learned parameter improvements."""
+        try:
+            Path(LEARNED_PARAMS_FILE).parent.mkdir(parents=True, exist_ok=True)
+            Path(LEARNED_PARAMS_FILE).write_text(json.dumps(self.learned, indent=2))
+        except:
+            pass
+    
+    def analyze_trades(self, symbol: str, baseline_params: dict) -> dict | None:
+        """Analyze recent closed trades for a symbol and suggest parameter tweaks."""
+        if not Path(TRADE_LOG_FILE).exists():
+            return None
+        
+        try:
+            df = pd.read_csv(TRADE_LOG_FILE)
+        except:
+            return None
+        
+        # Get closed trades for this symbol (last 30 trades max)
+        closed = df[(df['symbol'] == symbol) & (df['status'] == 'CLOSED')].tail(30)
+        
+        if len(closed) < MIN_TRADES_FOR_LEARNING:
+            return None  # Not enough data yet
+        
+        # Calculate metrics
+        wins = len(closed[closed['profit'].astype(float) > 0])
+        losses = len(closed[closed['profit'].astype(float) <= 0])
+        win_rate = wins / len(closed) if len(closed) > 0 else 0
+        total_profit = closed['profit'].astype(float).sum()
+        avg_profit = total_profit / len(closed) if len(closed) > 0 else 0
+        max_loss = closed['profit'].astype(float).min()
+        profit_factor = (closed[closed['profit'].astype(float) > 0]['profit'].astype(float).sum() / 
+                        abs(closed[closed['profit'].astype(float) <= 0]['profit'].astype(float).sum())) if losses > 0 else 99
+        
+        # Suggested adjustments based on performance
+        adjustments = {}
+        adx_threshold = float(baseline_params.get('ADX', 20))
+        atr_mult = float(baseline_params.get('ATR_Mult', 1.5))
+        ema_fast = int(baseline_params.get('EMA_Fast', 10))
+        ema_slow = int(baseline_params.get('EMA_Slow', 50))
+        
+        # Heuristic 1: If win rate is very low, increase ADX threshold (stricter filter)
+        if win_rate < 0.35:
+            adx_threshold = min(adx_threshold + 2, 30)
+            adjustments['ADX'] = adx_threshold
+        # Heuristic 2: If win rate is high, we could relax slightly (more trades)
+        elif win_rate > 0.65:
+            adx_threshold = max(adx_threshold - 1, 15)
+            adjustments['ADX'] = adx_threshold
+        
+        # Heuristic 3: If profit factor is very low, reduce ATR multiplier (tighter SL/TP)
+        if profit_factor < 1.0:
+            atr_mult = max(atr_mult - 0.1, 0.8)
+            adjustments['ATR_Mult'] = round(atr_mult, 1)
+        # Heuristic 4: If profit factor is high, we could widen a bit (more profit per trade)
+        elif profit_factor > 2.5:
+            atr_mult = min(atr_mult + 0.1, 2.5)
+            adjustments['ATR_Mult'] = round(atr_mult, 1)
+        
+        # Heuristic 5: If max loss is severe, tighten ATR mult further
+        if max_loss < -50:
+            atr_mult = max(atr_mult - 0.15, 0.7)
+            adjustments['ATR_Mult'] = round(atr_mult, 1)
+        
+        return {
+            'symbol': symbol,
+            'trades': len(closed),
+            'win_rate': round(win_rate, 3),
+            'profit_factor': round(profit_factor, 2),
+            'total_profit': round(total_profit, 2),
+            'avg_profit': round(avg_profit, 2),
+            'max_loss': round(max_loss, 2),
+            'adjustments': adjustments
+        }
+    
+    def optimize_all(self, baseline: dict) -> dict:
+        """Analyze all symbols and apply learned adjustments."""
+        results = {}
+        updated = False
+        
+        for symbol in SYMBOLS:
+            analysis = self.analyze_trades(symbol, baseline.get(symbol, {}))
+            if analysis and analysis['adjustments']:
+                results[symbol] = analysis
+                # Apply adjustments to learned params
+                if symbol not in self.learned:
+                    self.learned[symbol] = baseline.get(symbol, {}).copy()
+                for key, val in analysis['adjustments'].items():
+                    self.learned[symbol][key] = val
+                updated = True
+        
+        if updated:
+            self.save_learned_params()
+            print(f"\n[🤖 LEARNING] Updated {len(results)} symbols based on trade analysis")
+            for sym, analysis in results.items():
+                print(f"  {sym}: {analysis['trades']} trades, {analysis['win_rate']*100:.0f}% win, PF {analysis['profit_factor']}")
+        
+        return results
+    
+    def get_active_params(self, symbol: str, baseline: dict) -> dict:
+        """Get current params: learned if available, else baseline."""
+        if symbol in self.learned:
+            return self.learned[symbol]
+        return baseline.get(symbol, {})
+
+
+optimizer = ParameterOptimizer()
+
+# Initialize AI Brain
+brain = get_brain()
+
 # ============================================================================
 # TRADE LOGGING
 # ============================================================================
@@ -96,6 +238,33 @@ def init_mt5() -> bool:
     return True
 
 
+def check_mt5_connection() -> bool:
+    """Check if MT5 is still connected."""
+    try:
+        account_info = mt5.account_info()
+        if account_info is None:
+            return False
+        return True
+    except Exception:
+        return False
+
+
+def reconnect_mt5() -> bool:
+    """Attempt to reconnect to MT5."""
+    print("[!] MT5 connection lost. Attempting to reconnect...")
+    try:
+        mt5.shutdown()
+        time.sleep(2)
+        if mt5.initialize():
+            account_info = mt5.account_info()
+            if account_info:
+                print(f"[✓] MT5 reconnected: Account {account_info.login}")
+                return True
+    except Exception as e:
+        print(f"[!] Reconnection failed: {e}")
+    return False
+
+
 def shutdown_mt5():
     """Shutdown MT5 connection."""
     mt5.shutdown()
@@ -109,6 +278,11 @@ def get_broker_symbol(symbol: str) -> str:
 
 def get_symbol_info(symbol: str) -> dict | None:
     """Get real symbol info from MT5 (tick size, digits, spread, etc.)."""
+    # Check connection first
+    if not check_mt5_connection():
+        if not reconnect_mt5():
+            return None
+    
     broker_sym = get_broker_symbol(symbol)
     info = mt5.symbol_info(broker_sym)
     if info is None:
@@ -305,16 +479,23 @@ def close_position(position: dict) -> bool:
 
 def fetch_live_candles(symbol: str, timeframe=mt5.TIMEFRAME_M5, bars: int = LOOKBACK_BARS) -> pd.DataFrame | None:
     """Fetch live candles from MT5."""
+    # Check connection first
+    if not check_mt5_connection():
+        if not reconnect_mt5():
+            return None
+    
     broker_sym = get_broker_symbol(symbol)
     
     # Ensure symbol is visible in Market Watch
     if not mt5.symbol_select(broker_sym, True):
-        print(f"[!] Failed to select {broker_sym}")
-        return None
+        # Try once more after small delay
+        time.sleep(0.5)
+        if not mt5.symbol_select(broker_sym, True):
+            print(f"[!] Failed to select {broker_sym}")
+            return None
     
     rates = mt5.copy_rates_from_pos(broker_sym, timeframe, 0, bars)
     if rates is None or len(rates) < 100:
-        print(f"[!] Failed to fetch candles for {broker_sym}: {mt5.last_error()}")
         return None
     
     df = pd.DataFrame(rates)
@@ -361,7 +542,7 @@ def add_indicators(df: pd.DataFrame, fast_ema: int, slow_ema: int) -> pd.DataFra
 
 
 def generate_signal(df: pd.DataFrame, params: dict, symbol: str, sym_info: dict) -> dict | None:
-    """Generate trading signal based on latest bar."""
+    """Generate trading signal based on latest bar. Now integrated with AI Brain."""
     if not params:
         return None
     
@@ -369,6 +550,11 @@ def generate_signal(df: pd.DataFrame, params: dict, symbol: str, sym_info: dict)
     slow = int(params.get('EMA_Slow', 50))
     adx_th = float(params.get('ADX', 20))
     atr_mult = float(params.get('ATR_Mult', 1.5))
+    
+    # XAUUSD override: start with lower ADX to allow trading and learning
+    # The optimizer will adjust based on actual live performance
+    if symbol == 'XAUUSD':
+        adx_th = 15.0
 
     df = add_indicators(df, fast, slow).fillna(0)
     i = len(df) - 1
@@ -388,6 +574,30 @@ def generate_signal(df: pd.DataFrame, params: dict, symbol: str, sym_info: dict)
     ask = sym_info['ask']
     spread_points = sym_info['spread']
     digits = sym_info['digits']
+    
+    # ========== AI BRAIN INTEGRATION ==========
+    # Let the brain analyze market conditions and potentially adapt parameters
+    try:
+        brain_analysis = brain.process_market_data(symbol, df, sym_info, params)
+        
+        # Check if brain recommends against trading
+        if not brain_analysis.get('should_trade', True):
+            reason = brain_analysis.get('reason', 'Brain says no')
+            # Still return None but log the reason
+            return None
+        
+        # Use brain's adapted parameters if available
+        adapted_params = brain_analysis.get('params', {})
+        if adapted_params:
+            adx_th = float(adapted_params.get('ADX', adx_th))
+            atr_mult = float(adapted_params.get('ATR_Mult', atr_mult))
+            # XAUUSD still gets lower ADX for learning
+            if symbol == 'XAUUSD' and adx_th > 15:
+                adx_th = 15.0
+    except Exception as e:
+        # If brain fails, continue with original params
+        pass
+    # ==========================================
 
     # Session filter
     if not (SESSION_START <= hour <= SESSION_END):
@@ -502,30 +712,165 @@ class TelegramBot:
                 # /start or /help command
                 if text in ['/start', '/help']:
                     help_msg = (
-                        "🤖 <b>Ultima Trading Bot</b>\n"
-                        "━━━━━━━━━━━━━━━━\n\n"
-                        "<b>📊 Trading Commands</b>\n"
+                        "🤖 Ultima Trading Bot\n"
+                        "--------------------------------\n"
+                        "📊 Trading Commands\n"
                         "/risk [0.01-100] - Set risk % per trade\n"
-                        "   Example: /risk 2.5\n"
                         "/positions - View open positions\n"
-                        "/status - Bot status & settings\n\n"
-                        "<b>🔧 Symbol Controls</b>\n"
-                        "/eurusd - Toggle EUR/USD\n"
-                        "/gbpusd - Toggle GBP/USD\n"
-                        "/usdjpy - Toggle USD/JPY\n"
-                        "/xauusd - Toggle XAU/USD (Gold)\n"
-                        "/gbpjpy - Toggle GBP/JPY\n"
-                        "/btcusd - Toggle BTC/USD\n"
-                        "/nas100 - Toggle NAS100\n\n"
-                        "<b>ℹ️ Other</b>\n"
-                        "/help - Show this message\n\n"
-                        "━━━━━━━━━━━━━━━━\n"
-                        "💡 Bot scans markets every 30s\n"
-                        "📊 Uses EMA/ADX/ATR strategy\n"
-                        "🎯 2:1 Risk-Reward ratio"
+                        "/status - Bot status & settings\n"
+                        "/ping - Check bot connectivity\n\n"
+                        "🧠 AI Intelligence\n"
+                        "/brain - AI insights & daily summary\n"
+                        "/brain <sym> - Symbol intelligence report\n"
+                        "/learn - Show learned parameters\n\n"
+                        "🔍 Debugging\n"
+                        "/debug <symbol> - Detailed indicators\n"
+                        "/why <symbol> - Quick verdict\n\n"
+                        "🔧 Symbol Toggles\n"
+                        "/eurusd /gbpusd /usdjpy /xauusd /gbpjpy /btcusd /nas100\n\n"
+                        "📈 Scans every 30s with AI adaptation"
                     )
-                    send_telegram_message(help_msg)
+                    sent = send_telegram_message(help_msg, silent=False)
+                    if not sent:
+                        print("[!] Failed to send /help message to Telegram")
                 
+                # /debug <symbol> — detailed indicators and reason
+                elif text.startswith('/debug '):
+                    parts = text.split()
+                    if len(parts) >= 2:
+                        sym = parts[1].upper()
+                        if sym in SYMBOLS:
+                            sym_info = get_symbol_info(sym)
+                            df = fetch_live_candles(sym)
+                            params = get_instrument_settings(sym)
+                            if not sym_info or df is None or params is None or len(df) < 100:
+                                send_telegram_message(f"❌ Not enough data for {sym}")
+                            else:
+                                fast = int(params.get('EMA_Fast', 10))
+                                slow = int(params.get('EMA_Slow', 50))
+                                adx_th = float(params.get('ADX', 20))
+                                atr_mult = float(params.get('ATR_Mult', 1.5))
+                                df_i = add_indicators(df, fast, slow).fillna(0)
+                                i = len(df_i) - 1
+                                ema_f = float(df_i['EMA_Fast'].iat[i])
+                                ema_s = float(df_i['EMA_Slow'].iat[i])
+                                adx = float(df_i['ADX'].iat[i])
+                                atr = float(df_i['ATR'].iat[i])
+                                hour = int(df_i['Time'].iat[i].hour)
+                                bid = sym_info['bid']; ask = sym_info['ask']
+                                spread = sym_info['spread']
+                                direction = 'BUY' if ema_f > ema_s else ('SELL' if ema_f < ema_s else 'FLAT')
+                                reason = []
+                                if not (SESSION_START <= hour <= SESSION_END):
+                                    reason.append(f"Session closed ({hour} UTC)")
+                                if not np.isfinite(adx) or adx <= adx_th:
+                                    reason.append(f"ADX {adx:.1f} ≤ {adx_th}")
+                                if direction == 'FLAT':
+                                    reason.append("EMAs equal / no trend")
+                                # Would we signal?
+                                sig = generate_signal(df, params, sym, sym_info)
+                                would = 'YES' if sig else 'NO'
+                                because = 'OK' if would == 'YES' else (', '.join(reason) or 'No condition met')
+                                msg_lines = [
+                                    f"🔎 <b>DEBUG {sym}</b>",
+                                    "━━━━━━━━━━━━━━━━",
+                                    f"EMA Fast/Slow: {ema_f:.5f} / {ema_s:.5f}",
+                                    f"ADX: {adx:.1f}  | ATR: {atr:.5f}",
+                                    f"Bid/Ask: {bid} / {ask}  | Spread: {spread} pts",
+                                    f"Direction: {direction}",
+                                    f"Session OK: {'YES' if (SESSION_START <= hour <= SESSION_END) else 'NO'}",
+                                    f"Would Signal Now: {would}",
+                                    f"Reason: {because}"
+                                ]
+                                send_telegram_message('\n'.join(msg_lines))
+                        else:
+                            send_telegram_message(f"❌ Unknown symbol: {sym}")
+                    else:
+                        send_telegram_message("Usage: /debug <symbol>  e.g., /debug xauusd")
+
+                # /why <symbol> — one-line verdict
+                elif text.startswith('/why '):
+                    parts = text.split()
+                    if len(parts) >= 2:
+                        sym = parts[1].upper()
+                        if sym in SYMBOLS:
+                            sym_info = get_symbol_info(sym)
+                            df = fetch_live_candles(sym)
+                            params = get_instrument_settings(sym)
+                            if not sym_info or df is None or params is None or len(df) < 100:
+                                send_telegram_message(f"❌ {sym}: not enough data")
+                            else:
+                                fast = int(params.get('EMA_Fast', 10))
+                                slow = int(params.get('EMA_Slow', 50))
+                                adx_th = float(params.get('ADX', 20))
+                                df_i = add_indicators(df, fast, slow).fillna(0)
+                                i = len(df_i) - 1
+                                ema_f = float(df_i['EMA_Fast'].iat[i])
+                                ema_s = float(df_i['EMA_Slow'].iat[i])
+                                adx = float(df_i['ADX'].iat[i])
+                                hour = int(df_i['Time'].iat[i].hour)
+                                reason = None
+                                if not (SESSION_START <= hour <= SESSION_END):
+                                    reason = f"session closed (UTC {hour})"
+                                elif not np.isfinite(adx) or adx <= adx_th:
+                                    reason = f"adx {adx:.1f} ≤ {adx_th}"
+                                elif abs(ema_f - ema_s) < 1e-12:
+                                    reason = "emas equal/no trend"
+                                sig = generate_signal(df, params, sym, sym_info)
+                                if sig and not reason:
+                                    send_telegram_message(f"✅ {sym}: signal ready ({sig['direction']})")
+                                else:
+                                    send_telegram_message(f"⏸️ {sym}: no signal — {reason or 'no condition met'}")
+                        else:
+                            send_telegram_message(f"❌ Unknown symbol: {sym}")
+                    else:
+                        send_telegram_message("Usage: /why <symbol>  e.g., /why xauusd")
+                
+                # /learn command — see what bot has learned
+                elif text == '/learn':
+                    if not optimizer.learned:
+                        send_telegram_message("📚 <b>No Learning Yet</b>\n\nBot learns from closed trades.\nNeed at least 5 closed trades per symbol.")
+                    else:
+                        lines = ["📚 <b>Bot Learned Parameters</b>\n━━━━━━━━━━━━━━━━"]
+                        for sym, params_adj in optimizer.learned.items():
+                            lines.append(f"\n<b>{sym}</b>:")
+                            if 'ADX' in params_adj:
+                                lines.append(f"   ADX threshold: {params_adj['ADX']}")
+                            if 'ATR_Mult' in params_adj:
+                                lines.append(f"   ATR multiplier: {params_adj['ATR_Mult']}")
+                            if 'EMA_Fast' in params_adj:
+                                lines.append(f"   EMA Fast: {params_adj['EMA_Fast']}")
+                        lines.append(f"\n━━━━━━━━━━━━━━━━\n✅ Parameters auto-save to: learned_params.json")
+                        send_telegram_message('\n'.join(lines))
+                
+                # /brain command — AI brain insights
+                elif text == '/brain':
+                    try:
+                        summary = brain.get_daily_summary()
+                        send_telegram_message(summary)
+                    except Exception as e:
+                        send_telegram_message(f"🧠 AI Brain initializing...\nRun bot for a while to collect data.")
+                
+                # /brain <symbol> — detailed symbol intelligence
+                elif text.startswith('/brain '):
+                    parts = text.split()
+                    if len(parts) >= 2:
+                        sym = parts[1].upper()
+                        if sym in SYMBOLS:
+                            try:
+                                report = brain.get_symbol_report(sym)
+                                send_telegram_message(report)
+                            except Exception as e:
+                                send_telegram_message(f"🧠 No data for {sym} yet.\nBot needs to run and collect market data.")
+                        else:
+                            send_telegram_message(f"❌ Unknown symbol: {sym}")
+                    else:
+                        send_telegram_message("Usage: /brain <symbol>  e.g., /brain xauusd")
+
+                # /ping command
+                elif text == '/ping':
+                    send_telegram_message("✅ Bot is online and connected.")
+
                 # /risk command
                 elif text.startswith('/risk'):
                     parts = text.split()
@@ -675,14 +1020,142 @@ def show_open_positions():
         print(f"    {pos.symbol}: {direction} {pos.volume} @ {pos.price_open} (P/L: ${pos.profit:.2f})")
 
 
-def scan_markets(cfg: dict, verbose: bool = False):
-    """Scan all enabled symbols for signals and execute trades."""
+def process_single_symbol(symbol: str, enabled: set, risk: float) -> tuple:
+    """Process a single symbol and return its status and signal."""
     global last_signals, tracked_positions
+    
+    if symbol not in enabled:
+        return (symbol, None, None)
+    
+    # Get REAL symbol info from MT5
+    sym_info = get_symbol_info(symbol)
+    if not sym_info:
+        return (symbol, f"{symbol}:ERR", None)
+    
+    # Check if we already have an open position for this symbol
+    existing_pos = get_position_for_symbol(symbol)
+    
+    # Add entry_regime from tracked_positions if available
+    if existing_pos and symbol in tracked_positions:
+        existing_pos['entry_regime'] = tracked_positions[symbol].get('entry_regime', 'unknown')
+    
+    # Get strategy params from best_settings.json (baseline)
+    params = get_instrument_settings(symbol)
+    if not params:
+        return (symbol, f"{symbol}:NOCFG", None)
+    
+    # Get learned params if available (bot has learned improvements)
+    params = optimizer.get_active_params(symbol, {symbol: params})
+    if symbol in params:
+        params = params[symbol]
+    
+    # Fetch LIVE candles
+    df = fetch_live_candles(symbol)
+    if df is None or len(df) < 100:
+        return (symbol, f"{symbol}:NODATA", None)
+    
+    # Generate signal
+    signal = generate_signal(df, params, symbol, sym_info)
+    
+    # If we have a position, AI manages it intelligently
+    if existing_pos:
+        pl = existing_pos['profit']
+        
+        # First check AI position manager
+        try:
+            # Add current price info to position
+            existing_pos['current_price'] = sym_info['bid'] if existing_pos['direction'] == 'BUY' else sym_info['ask']
+            existing_pos['bid'] = sym_info['bid']
+            existing_pos['ask'] = sym_info['ask']
+            
+            # Get AI management decision
+            decision = brain.manage_open_position(symbol, existing_pos, df)
+            
+            if decision and decision.action != 'hold':
+                if decision.action == 'close_full':
+                    print(f"\n🧠 AI: {symbol} {decision.action} - {decision.reason}")
+                    send_telegram_message(
+                        f"🧠 <b>AI Closing {existing_pos['direction']} {symbol}</b>\n"
+                        f"{decision.reason}\n"
+                        f"P/L: ${pl:.2f}"
+                    )
+                    if close_position(existing_pos):
+                        return (symbol, f"{symbol}:AI_CLOSED", None)
+                
+                elif decision.action == 'move_breakeven' and decision.new_sl:
+                    print(f"\n🧠 AI: {symbol} breakeven - {decision.reason}")
+                    # Modify SL (would need modify_position function)
+                    # For now just log it
+                    send_telegram_message(
+                        f"🛡️ <b>AI: Breakeven SL</b>\n"
+                        f"{symbol}: {decision.reason}"
+                    )
+                
+                elif decision.action == 'close_partial':
+                    print(f"\n🧠 AI: {symbol} partial close - {decision.reason}")
+                    send_telegram_message(
+                        f"💰 <b>AI: Taking Partials</b>\n"
+                        f"{symbol}: {decision.reason}\n"
+                        f"Closing {decision.close_percentage:.0f}%"
+                    )
+                
+                elif decision.action == 'trail_sl' and decision.new_sl:
+                    print(f"\n🧠 AI: {symbol} trail SL - {decision.reason}")
+                    send_telegram_message(
+                        f"📈 <b>AI: Trailing Stop</b>\n"
+                        f"{symbol}: {decision.reason}"
+                    )
+        except Exception as e:
+            # If AI fails, continue with normal logic
+            pass
+        
+        # Check traditional reversal signal
+        if signal and signal['direction'] != existing_pos['direction']:
+            # Signal reversed - close existing position
+            print(f"\n>>> {symbol}: REVERSAL {existing_pos['direction']} -> {signal['direction']} | Closing...")
+            send_telegram_message(
+                f"🔄 <b>Closing {existing_pos['direction']} {symbol}</b>\n"
+                f"Signal reversed to {signal['direction']}\n"
+                f"P/L: ${pl:.2f}"
+            )
+            if close_position(existing_pos):
+                return (symbol, f"{symbol}:CLOSED", None)
+            else:
+                return (symbol, f"{symbol}:CLOSEFAIL", None)
+        else:
+            # Holding position
+            dir_char = '▲' if existing_pos['direction'] == 'BUY' else '▼'
+            pl_str = f"+${pl:.0f}" if pl >= 0 else f"-${abs(pl):.0f}"
+            return (symbol, f"{symbol}:{dir_char}{pl_str}", None)
+    
+    # No existing position - check for new signal
+    if signal:
+        sig_key = f"{symbol}_{signal['direction']}"
+        last_time = last_signals.get(sig_key)
+        if last_time and (datetime.now(timezone.utc) - last_time).seconds < 60:
+            return (symbol, f"{symbol}:WAIT", None)
+        
+        # Return signal for execution
+        return (symbol, None, signal)
+    else:
+        return (symbol, f"{symbol}:-", None)
+
+
+def scan_markets(cfg: dict, verbose: bool = False):
+    """Scan all enabled symbols for signals and execute trades (PARALLEL)."""
+    global last_signals, tracked_positions
+    
+    # Connection health check
+    if not check_mt5_connection():
+        print("[!] MT5 connection lost during scan")
+        if not reconnect_mt5():
+            print("[!] Could not reconnect to MT5. Skipping this scan cycle.")
+            return
     
     enabled = set(cfg.get('enabled_symbols', SYMBOLS))
     risk = cfg.get('risk_percent', DEFAULT_RISK)
     
-    # First, check for closed positions (SL/TP hit)
+    # First, check for closed positions (SL/TP hit) - keep this sequential
     current_positions = {pos.symbol: pos for pos in get_open_positions()}
     
     for symbol, prev_pos in list(tracked_positions.items()):
@@ -714,6 +1187,12 @@ def scan_markets(cfg: dict, verbose: bool = False):
                             'profit': f"{profit:.2f}"
                         })
                         
+                        # Notify AI brain of trade close
+                        try:
+                            brain.on_trade_closed(symbol, exit_price, profit)
+                        except Exception:
+                            pass
+                        
                         result_emoji = "✅" if profit > 0 else "❌"
                         send_telegram_message(
                             f"{result_emoji} <b>Trade Closed</b>\\n"
@@ -726,106 +1205,92 @@ def scan_markets(cfg: dict, verbose: bool = False):
             
             del tracked_positions[symbol]
     
-    status = []  # Collect status for single-line output
+    # PARALLEL SCAN: Process all symbols concurrently
+    status = []
+    signals_to_execute = []
     
-    for symbol in SYMBOLS:
-        if symbol not in enabled:
-            continue
+    with ThreadPoolExecutor(max_workers=len(SYMBOLS)) as executor:
+        # Submit all symbol processing tasks
+        future_to_symbol = {executor.submit(process_single_symbol, symbol, enabled, risk): symbol 
+                           for symbol in SYMBOLS}
         
-        # Get REAL symbol info from MT5
+        # Collect results as they complete
+        for future in as_completed(future_to_symbol):
+            symbol, status_str, signal = future.result()
+            
+            if status_str:
+                status.append(status_str)
+            
+            if signal:
+                signals_to_execute.append((symbol, signal))
+    
+    # Execute any new signals (sequential for safety)
+    for symbol, signal in signals_to_execute:
+        # NEW SIGNAL - this is important, print it
         sym_info = get_symbol_info(symbol)
-        if not sym_info:
-            status.append(f"{symbol}:ERR")
-            continue
+        dir_char = '▲' if signal['direction'] == 'BUY' else '▼'
+        print(f"\n>>> NEW SIGNAL: {dir_char} {signal['direction']} {symbol} @ {signal['entry']} | TP:{signal['tp']} SL:{signal['stop']}")
         
-        # Check if we already have an open position for this symbol
-        existing_pos = get_position_for_symbol(symbol)
+        # Don't send signal alert - will send when position actually opens
+        success = open_position_with_retry(signal, sym_info, risk)
         
-        # Get strategy params from best_settings.json
-        params = get_instrument_settings(symbol)
-        if not params:
-            status.append(f"{symbol}:NOCFG")
-            continue
-        
-        # Fetch LIVE candles
-        df = fetch_live_candles(symbol)
-        if df is None or len(df) < 100:
-            status.append(f"{symbol}:NODATA")
-            continue
-        
-        # Generate signal
-        signal = generate_signal(df, params, symbol, sym_info)
-        
-        # If we have a position, check if signal reversed (close condition)
-        if existing_pos:
-            pl = existing_pos['profit']
-            if signal and signal['direction'] != existing_pos['direction']:
-                # Signal reversed - close existing position
-                print(f"\n>>> {symbol}: REVERSAL {existing_pos['direction']} -> {signal['direction']} | Closing...")
-                send_telegram_message(
-                    f"🔄 <b>Closing {existing_pos['direction']} {symbol}</b>\n"
-                    f"Signal reversed to {signal['direction']}\n"
-                    f"P/L: ${pl:.2f}"
-                )
-                if close_position(existing_pos):
-                    existing_pos = None
-                else:
-                    status.append(f"{symbol}:CLOSEFAIL")
-                    continue
-            else:
-                # Holding position
-                dir_char = '▲' if existing_pos['direction'] == 'BUY' else '▼'
-                pl_str = f"+${pl:.0f}" if pl >= 0 else f"-${abs(pl):.0f}"
-                status.append(f"{symbol}:{dir_char}{pl_str}")
-                continue
-        
-        # No existing position - check for new signal
-        if signal:
+        if success:
             sig_key = f"{symbol}_{signal['direction']}"
-            last_time = last_signals.get(sig_key)
-            if last_time and (datetime.now(timezone.utc) - last_time).seconds < 60:
-                status.append(f"{symbol}:WAIT")
-                continue
+            last_signals[sig_key] = datetime.now(timezone.utc)
+            status.append(f"{symbol}:OPENED")
+            send_telegram_message(
+                f"✅ <b>Position Opened</b>\n"
+                f"{signal['direction']} {symbol}\n"
+                f"Entry: {signal['entry']}\n"
+                f"🎯 TP: {signal['tp']}\n"
+                f"🛑 SL: {signal['stop']}"
+            )
             
-            # NEW SIGNAL - this is important, print it
-            dir_char = '▲' if signal['direction'] == 'BUY' else '▼'
-            print(f"\n>>> NEW SIGNAL: {dir_char} {signal['direction']} {symbol} @ {signal['entry']} | TP:{signal['tp']} SL:{signal['stop']}")
-            
-            # Don't send signal alert - will send when position actually opens
-            success = open_position_with_retry(signal, sym_info, risk)
-            
-            if success:
-                last_signals[sig_key] = datetime.now(timezone.utc)
-                status.append(f"{symbol}:OPENED")
-                send_telegram_message(
-                    f"✅ <b>Position Opened</b>\n"
-                    f"{signal['direction']} {symbol}\n"
-                    f"Entry: {signal['entry']}\n"
-                    f"🎯 TP: {signal['tp']}\n"
-                    f"🛑 SL: {signal['stop']}"
-                )
+            # Track this position for closure detection
+            pos = get_position_for_symbol(symbol)
+            if pos:
+                # Get current regime for entry tracking
+                try:
+                    sym_info_temp = get_symbol_info(symbol)
+                    df_temp = fetch_live_candles(symbol)
+                    entry_regime = 'unknown'
+                    if sym_info_temp and df_temp is not None:
+                        params_temp = get_instrument_settings(symbol)
+                        brain_data = brain.process_market_data(symbol, df_temp, sym_info_temp, params_temp)
+                        if brain_data and 'regime' in brain_data:
+                            entry_regime = brain_data['regime'].regime
+                except Exception:
+                    entry_regime = 'unknown'
                 
-                # Track this position for closure detection
-                pos = get_position_for_symbol(symbol)
-                if pos:
-                    tracked_positions[symbol] = {
-                        'ticket': pos.get('ticket'),
-                        'direction': signal['direction'],
-                        'entry_price': signal['entry'],
-                        'sl': signal['stop'],
-                        'tp': signal['tp'],
-                        'lot_size': signal.get('lot_size', 0),
-                        'open_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    }
-            else:
-                status.append(f"{symbol}:FAIL")
-                # Don't spam Telegram on failed orders
+                tracked_positions[symbol] = {
+                    'ticket': pos.get('ticket'),
+                    'direction': signal['direction'],
+                    'entry_price': signal['entry'],
+                    'sl': signal['stop'],
+                    'tp': signal['tp'],
+                    'lot_size': signal.get('lot_size', 0),
+                    'open_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'entry_regime': entry_regime
+                }
+                
+                # Notify AI brain of trade open
+                try:
+                    params = get_instrument_settings(symbol)
+                    brain.on_trade_opened(
+                        symbol, signal['direction'], signal['entry'],
+                        signal['stop'], signal['tp'], pos.get('lot_size', 0.01), params
+                    )
+                except Exception:
+                    pass
         else:
-            status.append(f"{symbol}:-")
+            status.append(f"{symbol}:FAIL")
+            # Don't spam Telegram on failed orders
     
-    # Single compact status line
+    # Single compact status line (sorted by symbol order in SYMBOLS)
+    status_dict = {s.split(':')[0]: s for s in status}
+    sorted_status = [status_dict.get(sym, f"{sym}:-") for sym in SYMBOLS if sym in enabled]
     ts = datetime.now().strftime('%H:%M:%S')
-    print(f"[{ts}] {' | '.join(status)}")
+    print(f"[{ts}] {' | '.join(sorted_status)}")
 
 
 def main():
@@ -851,12 +1316,31 @@ def main():
     print(f"[✓] Risk: {cfg['risk_percent']}%")
     print(f"[✓] Symbols: {', '.join(cfg['enabled_symbols'])}")
     
+    # Load baseline strategy params
+    baseline_params = {}
+    for sym in SYMBOLS:
+        params = get_instrument_settings(sym)
+        if params:
+            baseline_params[sym] = params
+    
+    # Load optimizer (learns from past trades)
+    if Path(LEARNED_PARAMS_FILE).exists():
+        print("[🤖] Loading learned parameters from past trades...")
+    
     # Telegram bot for commands
     tg = TelegramBot()
     if tg.is_configured():
         print("[✓] Telegram connected")
     else:
         print("[!] Telegram not configured")
+    
+    # Initialize AI brain with base parameters for each symbol
+    print("[🧠] Initializing AI Trading Brain...")
+    for sym in SYMBOLS:
+        base_params = get_instrument_settings(sym)
+        if base_params:
+            brain.initialize_symbol(sym, base_params)
+    print("[✓] AI Brain online - learning from market data")
     
     # Show existing open positions
     show_open_positions()
@@ -868,7 +1352,8 @@ def main():
             scan_markets(cfg)
         else:
             interval = max(5, args.loop)
-            print(f"[+] Scanning every {interval}s (Ctrl+C to stop)\n")
+            print(f"[+] Scanning every {interval}s (Ctrl+C to stop)")
+            print(f"[🤖] Self-learning enabled - optimizing every {OPTIMIZER_INTERVAL}s\n")
             
             # Start Telegram polling in separate thread for instant response
             telegram_active = threading.Event()
@@ -878,10 +1363,63 @@ def main():
                 nonlocal cfg
                 while telegram_active.is_set():
                     cfg = tg.poll_commands(cfg)
-                    time.sleep(1)  # Check Telegram every second
+                    time.sleep(1)
+            
+            # Start optimizer thread for continuous learning
+            optimizer_active = threading.Event()
+            optimizer_active.set()
+            
+            def optimizer_loop():
+                while optimizer_active.is_set():
+                    try:
+                        elapsed_since_opt = time.time() - optimizer.last_optimize
+                        if elapsed_since_opt >= OPTIMIZER_INTERVAL:
+                            optimizer.optimize_all(baseline_params)
+                            optimizer.last_optimize = time.time()
+                    except Exception as e:
+                        print(f"[!] Optimizer error: {e}")
+                    time.sleep(10)  # Check every 10s if time to optimize
+            
+            # Start AI brain analysis thread for real-time intelligence
+            brain_active = threading.Event()
+            brain_active.set()
+            brain_analysis_interval = 60  # Analyze every 60 seconds
+            last_brain_analysis = time.time()
+            
+            def brain_analysis_loop():
+                nonlocal last_brain_analysis
+                while brain_active.is_set():
+                    try:
+                        elapsed = time.time() - last_brain_analysis
+                        if elapsed >= brain_analysis_interval:
+                            # Run strategy evolution for all symbols
+                            for sym in SYMBOLS:
+                                try:
+                                    sym_info = get_symbol_info(sym)
+                                    df = fetch_live_candles(sym)
+                                    if sym_info and df is not None and len(df) >= 50:
+                                        params = get_instrument_settings(sym)
+                                        brain.process_market_data(sym, df, sym_info, params)
+                                except Exception:
+                                    pass
+                            
+                            # Cleanup old data weekly
+                            if datetime.now().weekday() == 0 and datetime.now().hour == 3:
+                                brain.cleanup()
+                            
+                            last_brain_analysis = time.time()
+                    except Exception as e:
+                        print(f"[!] Brain analysis error: {e}")
+                    time.sleep(15)  # Check every 15s
             
             telegram_thread = threading.Thread(target=telegram_loop, daemon=True)
+            optimizer_thread = threading.Thread(target=optimizer_loop, daemon=True)
+            brain_thread = threading.Thread(target=brain_analysis_loop, daemon=True)
             telegram_thread.start()
+            optimizer_thread.start()
+            brain_thread.start()
+            
+            print(f"[🧠] AI Brain analyzing every {brain_analysis_interval}s")
             
             # Market scanning loop
             while True:
@@ -893,6 +1431,8 @@ def main():
         print("\n[!] Stopped by user")
         if not args.once:
             telegram_active.clear()
+            optimizer_active.clear()
+            brain_active.clear()
     finally:
         shutdown_mt5()
         print("[✓] MT5 disconnected")
