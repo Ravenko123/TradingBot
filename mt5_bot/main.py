@@ -33,6 +33,7 @@ import MetaTrader5 as mt5
 from strategy import get_instrument_settings
 from telegram_bot import send_telegram_message, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from ai_brain import get_brain, TradingIntelligenceBrain
+from advanced_ai_brain import get_advanced_brain, TradeOutcome
 
 # ============================================================================
 # CONFIG
@@ -45,7 +46,7 @@ SYMBOLS = ['EURUSD', 'GBPUSD', 'USDJPY', 'XAUUSD', 'GBPJPY', 'BTCUSD', 'NAS100']
 BROKER_SUFFIX = {'EURUSD': '+', 'GBPUSD': '+', 'USDJPY': '+', 'GBPJPY': '+', 'XAUUSD': '+'}
 
 # Strategy constants (same as backtested)
-SESSION_START = 5   # hour UTC
+SESSION_START = 0   # hour UTC (loosened for more data)
 SESSION_END = 23    # hour UTC
 ATR_PERIOD = 14
 ADX_PERIOD = 14
@@ -477,6 +478,30 @@ def close_position(position: dict) -> bool:
     return False
 
 
+def modify_position_sl_tp(position: dict, new_sl: float | None = None, new_tp: float | None = None) -> bool:
+    """Modify SL/TP for an open position. Returns True if successful."""
+    if new_sl is None and new_tp is None:
+        return False
+
+    broker_sym = position['broker_symbol']
+    digits = get_symbol_info(position['symbol']).get('digits', 5) if get_symbol_info(position['symbol']) else 5
+    request = {
+        'action': mt5.TRADE_ACTION_SLTP,
+        'symbol': broker_sym,
+        'position': position['ticket'],
+        'sl': round(new_sl, digits) if new_sl is not None else position.get('sl', 0),
+        'tp': round(new_tp, digits) if new_tp is not None else position.get('tp', 0),
+        'magic': 123456,
+        'comment': 'TrendBot SLTP'
+    }
+
+    result = mt5.order_send(request)
+    if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+        return True
+    print(f"[!] SL/TP modify failed: {result.retcode if result else mt5.last_error()}")
+    return False
+
+
 def fetch_live_candles(symbol: str, timeframe=mt5.TIMEFRAME_M5, bars: int = LOOKBACK_BARS) -> pd.DataFrame | None:
     """Fetch live candles from MT5."""
     # Check connection first
@@ -503,6 +528,94 @@ def fetch_live_candles(symbol: str, timeframe=mt5.TIMEFRAME_M5, bars: int = LOOK
     df = df[['Time', 'open', 'high', 'low', 'close', 'tick_volume']]
     df.columns = ['Time', 'Open', 'High', 'Low', 'Close', 'Volume']
     return df
+
+
+# ============================================================================
+# MULTI-TIMEFRAME CONTEXT
+# ============================================================================
+
+def get_htf_bias(symbol: str, params: dict, timeframe = mt5.TIMEFRAME_H1) -> str:
+    """Determine higher timeframe bias using EMAs and ADX.
+    Returns one of: 'BULL', 'BEAR', 'FLAT', 'UNKNOWN'
+    """
+    try:
+        df_htf = fetch_live_candles(symbol, timeframe=timeframe, bars=400)
+        if df_htf is None or len(df_htf) < 100:
+            return 'UNKNOWN'
+
+        fast = int(params.get('EMA_Fast', 10))
+        slow = int(params.get('EMA_Slow', 50))
+        adx_th = float(params.get('ADX', 20))
+
+        df_i = add_indicators(df_htf, fast, slow).fillna(0)
+        i = len(df_i) - 1
+        ema_f = float(df_i['EMA_Fast'].iat[i])
+        ema_s = float(df_i['EMA_Slow'].iat[i])
+        adx = float(df_i['ADX'].iat[i])
+
+        # Slightly relaxed ADX threshold for HTF to get bias more often
+        htf_adx_th = max(15.0, adx_th * 0.8)
+
+        if not np.isfinite(adx):
+            return 'UNKNOWN'
+
+        if adx > htf_adx_th:
+            if ema_f > ema_s:
+                return 'BULL'
+            elif ema_f < ema_s:
+                return 'BEAR'
+        return 'FLAT'
+    except Exception:
+        return 'UNKNOWN'
+
+
+# ============================================================================
+# POSITION SIZING (risk scaling by confidence, phase, HTF alignment)
+# ============================================================================
+
+def adjust_risk_percent(base_risk: float, signal: dict, htf_bias: str) -> float:
+    """Scale risk % by AI confidence, market phase, and HTF alignment.
+    Applies safety clamps to keep risk within sane bounds.
+    """
+    # Confidence multiplier
+    confidence = float(signal.get('confidence', 0.6))
+    if confidence < 0.6:
+        m_conf = 0.8
+    elif confidence < 0.7:
+        m_conf = 0.9
+    elif confidence < 0.8:
+        m_conf = 1.0
+    elif confidence < 0.9:
+        m_conf = 1.2
+    else:
+        m_conf = 1.35
+
+    # Market phase multiplier
+    phase = str(signal.get('market_phase', '') or '').upper()
+    phase_map = {
+        'TRENDING_STRONG': 1.25,
+        'TRENDING_WEAK': 1.1,
+        'BREAKOUT': 1.2,
+        'RANGING': 0.9,
+        'REVERSAL': 0.8,
+        'QUIET': 0.7,
+    }
+    m_phase = phase_map.get(phase, 1.0)
+
+    # HTF alignment multiplier
+    direction = signal.get('direction', '')
+    aligned = (htf_bias == 'BULL' and direction == 'BUY') or (htf_bias == 'BEAR' and direction == 'SELL')
+    if htf_bias in ('UNKNOWN', 'FLAT'):
+        m_htf = 0.9
+    elif aligned:
+        m_htf = 1.0
+    else:
+        m_htf = 0.6
+
+    # Combine with clamps
+    scaled = base_risk * m_conf * m_phase * m_htf
+    scaled = max(0.2, min(3.0, round(scaled, 2)))  # keep between 0.2% and 3%
+    return scaled
 
 
 # ============================================================================
@@ -579,15 +692,8 @@ def generate_signal(df: pd.DataFrame, params: dict, symbol: str, sym_info: dict)
     # Let the brain analyze market conditions and potentially adapt parameters
     try:
         brain_analysis = brain.process_market_data(symbol, df, sym_info, params)
-        
-        # Check if brain recommends against trading
-        if not brain_analysis.get('should_trade', True):
-            reason = brain_analysis.get('reason', 'Brain says no')
-            # Still return None but log the reason
-            return None
-        
-        # Use brain's adapted parameters if available
-        adapted_params = brain_analysis.get('params', {})
+        # Let the AI adapt parameters but do not block trades during learning
+        adapted_params = brain_analysis.get('params', {}) if brain_analysis else {}
         if adapted_params:
             adx_th = float(adapted_params.get('ADX', adx_th))
             atr_mult = float(adapted_params.get('ATR_Mult', atr_mult))
@@ -603,8 +709,9 @@ def generate_signal(df: pd.DataFrame, params: dict, symbol: str, sym_info: dict)
     if not (SESSION_START <= hour <= SESSION_END):
         return None
     
-    # ADX filter
-    if adx <= adx_th or not np.isfinite(adx):
+    # ADX filter (further loosened to let AI learn on weak structure)
+    relaxed_adx = max(8.0, adx_th * 0.4)
+    if adx <= relaxed_adx or not np.isfinite(adx):
         return None
 
     # Signal logic (same as backtested)
@@ -866,6 +973,49 @@ class TelegramBot:
                             send_telegram_message(f"❌ Unknown symbol: {sym}")
                     else:
                         send_telegram_message("Usage: /brain <symbol>  e.g., /brain xauusd")
+                
+                # /ai command — advanced AI statistics
+                elif text == '/ai':
+                    try:
+                        advanced_brain = get_advanced_brain()
+                        
+                        # Build report
+                        lines = ["🤖 <b>ADVANCED AI SYSTEM</b>\n━━━━━━━━━━━━━━━━"]
+                        
+                        # Patterns learned
+                        if advanced_brain.patterns.patterns:
+                            lines.append(f"\n📊 <b>Patterns Learned:</b> {len(advanced_brain.patterns.patterns)}")
+                            # Top 3 patterns
+                            top_patterns = sorted(
+                                advanced_brain.patterns.patterns.values(),
+                                key=lambda p: p.win_rate * p.occurrences,
+                                reverse=True
+                            )[:3]
+                            for p in top_patterns:
+                                wr = p.win_rate * 100
+                                lines.append(f"   • WR {wr:.1f}% ({p.occurrences} trades)")
+                        
+                        # Symbol profiles
+                        if advanced_brain.profiler.profiles:
+                            lines.append(f"\n🎯 <b>Symbol Profiles:</b> {len(advanced_brain.profiler.profiles)}")
+                            hot_symbols = [p for p in advanced_brain.profiler.profiles.values() if p.is_hot]
+                            cold_symbols = [p for p in advanced_brain.profiler.profiles.values() if p.is_cold]
+                            if hot_symbols:
+                                lines.append(f"   🔥 Hot (winning streak): {', '.join(p.symbol for p in hot_symbols)}")
+                            if cold_symbols:
+                                lines.append(f"   ❄️ Cold (losing streak): {', '.join(p.symbol for p in cold_symbols)}")
+                        
+                        # Market phases
+                        lines.append(f"\n📈 <b>Market Structure:</b> Detection Active")
+                        
+                        # Order flow
+                        lines.append(f"💧 <b>Order Flow:</b> Monitoring ({len(advanced_brain.market_structure.order_flow.history)} samples)")
+                        
+                        lines.append(f"\n━━━━━━━━━━━━━━━━\n✅ AI is learning in real-time")
+                        
+                        send_telegram_message('\n'.join(lines))
+                    except Exception as e:
+                        send_telegram_message(f"🤖 Advanced AI: Initializing...\n{str(e)[:100]}")
 
                 # /ping command
                 elif text == '/ping':
@@ -1054,8 +1204,44 @@ def process_single_symbol(symbol: str, enabled: set, risk: float) -> tuple:
     if df is None or len(df) < 100:
         return (symbol, f"{symbol}:NODATA", None)
     
-    # Generate signal
+    # Generate basic signal
     signal = generate_signal(df, params, symbol, sym_info)
+    
+    # ADVANCED AI ANALYSIS - Validate and enhance signal
+    if signal:
+        try:
+            advanced_brain = get_advanced_brain()
+            # Add indicators for the AI (keep original column case: ATR/ADX/EMA_*) and add lowercase OHLC for compatibility
+            df_ai = add_indicators(df, int(params.get('EMA_Fast', 10)), int(params.get('EMA_Slow', 50))).fillna(0)
+            # Ensure lowercase aliases expected by advanced_ai_brain internals
+            for upper, lower in [('High', 'high'), ('Low', 'low'), ('Close', 'close'), ('Open', 'open'), ('Time', 'time'), ('Volume', 'volume')]:
+                if upper in df_ai.columns:
+                    df_ai[lower] = df_ai[upper]
+            signal = advanced_brain.analyze_signal(
+                symbol, df_ai, signal,
+                sym_info['bid'], sym_info['ask'], sym_info['spread']
+            )
+            
+            # If advanced AI disapproves, reject signal
+            if not signal.get('ai_approved', False):
+                print(f"⚠️  {symbol}: Signal rejected - {signal.get('reason', 'Low confidence')}")
+                signal = None
+            else:
+                # Use smart SL/TP if available
+                if 'smart_sl' in signal and 'smart_tp' in signal:
+                    signal['stop'] = signal['smart_sl']
+                    signal['tp'] = signal['smart_tp']
+                
+                print(f"✅ {symbol}: AI approved (confidence {signal.get('confidence', 0):.1%})")
+        except Exception as e:
+            print(f"[!] Advanced AI error on {symbol}: {e}")
+            # Continue with original signal if advanced AI fails but tag a safe confidence
+            signal['confidence'] = max(signal.get('confidence', 0.6), 0.6)
+            signal['ai_approved'] = True
+        
+        # Ensure confidence defaults so HTF gate doesn't see 0%
+        signal.setdefault('confidence', 0.6)
+        signal.setdefault('ai_approved', True)
     
     # If we have a position, AI manages it intelligently
     if existing_pos:
@@ -1073,60 +1259,52 @@ def process_single_symbol(symbol: str, enabled: set, risk: float) -> tuple:
             
             if decision and decision.action != 'hold':
                 if decision.action == 'close_full':
-                    print(f"\n🧠 AI: {symbol} {decision.action} - {decision.reason}")
-                    send_telegram_message(
-                        f"🧠 <b>AI Closing {existing_pos['direction']} {symbol}</b>\n"
-                        f"{decision.reason}\n"
-                        f"P/L: ${pl:.2f}"
-                    )
+                    print(f"\n🧠 AI: {symbol} close_full - {decision.reason}")
                     if close_position(existing_pos):
                         return (symbol, f"{symbol}:AI_CLOSED", None)
-                
                 elif decision.action == 'move_breakeven' and decision.new_sl:
                     print(f"\n🧠 AI: {symbol} breakeven - {decision.reason}")
-                    # Modify SL (would need modify_position function)
-                    # For now just log it
-                    send_telegram_message(
-                        f"🛡️ <b>AI: Breakeven SL</b>\n"
-                        f"{symbol}: {decision.reason}"
-                    )
-                
+                    if modify_position_sl_tp(existing_pos, new_sl=decision.new_sl):
+                        tracked_positions.setdefault(symbol, existing_pos)['sl'] = decision.new_sl
+                        send_telegram_message(
+                            f"🛡️ <b>AI: Breakeven SL</b>\n"
+                            f"{symbol}: {decision.reason}"
+                        )
                 elif decision.action == 'close_partial':
-                    print(f"\n🧠 AI: {symbol} partial close - {decision.reason}")
-                    send_telegram_message(
-                        f"💰 <b>AI: Taking Partials</b>\n"
-                        f"{symbol}: {decision.reason}\n"
-                        f"Closing {decision.close_percentage:.0f}%"
-                    )
-                
+                    print(f"\n🧠 AI: {symbol} partial close - {decision.reason} [not implemented]")
                 elif decision.action == 'trail_sl' and decision.new_sl:
                     print(f"\n🧠 AI: {symbol} trail SL - {decision.reason}")
-                    send_telegram_message(
-                        f"📈 <b>AI: Trailing Stop</b>\n"
-                        f"{symbol}: {decision.reason}"
-                    )
+                    if modify_position_sl_tp(existing_pos, new_sl=decision.new_sl):
+                        tracked_positions.setdefault(symbol, existing_pos)['sl'] = decision.new_sl
+                        send_telegram_message(
+                            f"📈 <b>AI: Trailing Stop</b>\n"
+                            f"{symbol}: {decision.reason}"
+                        )
         except Exception as e:
             # If AI fails, continue with normal logic
             pass
         
-        # Check traditional reversal signal
+        # Check traditional reversal signal (only close if in profit to avoid cutting losers)
         if signal and signal['direction'] != existing_pos['direction']:
-            # Signal reversed - close existing position
-            print(f"\n>>> {symbol}: REVERSAL {existing_pos['direction']} -> {signal['direction']} | Closing...")
-            send_telegram_message(
-                f"🔄 <b>Closing {existing_pos['direction']} {symbol}</b>\n"
-                f"Signal reversed to {signal['direction']}\n"
-                f"P/L: ${pl:.2f}"
-            )
-            if close_position(existing_pos):
-                return (symbol, f"{symbol}:CLOSED", None)
+            if pl > 0:
+                print(f"\n>>> {symbol}: REVERSAL {existing_pos['direction']} -> {signal['direction']} | Closing...")
+                send_telegram_message(
+                    f"🔄 <b>Closing {existing_pos['direction']} {symbol}</b>\n"
+                    f"Signal reversed to {signal['direction']}\n"
+                    f"P/L: ${pl:.2f}"
+                )
+                if close_position(existing_pos):
+                    return (symbol, f"{symbol}:CLOSED", None)
+                else:
+                    return (symbol, f"{symbol}:CLOSEFAIL", None)
             else:
-                return (symbol, f"{symbol}:CLOSEFAIL", None)
-        else:
-            # Holding position
-            dir_char = '▲' if existing_pos['direction'] == 'BUY' else '▼'
-            pl_str = f"+${pl:.0f}" if pl >= 0 else f"-${abs(pl):.0f}"
-            return (symbol, f"{symbol}:{dir_char}{pl_str}", None)
+                # Ignore reversal if losing; keep holding
+                pass
+
+        # Holding position
+        dir_char = '▲' if existing_pos['direction'] == 'BUY' else '▼'
+        pl_str = f"+${pl:.0f}" if pl >= 0 else f"-${abs(pl):.0f}"
+        return (symbol, f"{symbol}:{dir_char}{pl_str}", None)
     
     # No existing position - check for new signal
     if signal:
@@ -1180,14 +1358,37 @@ def scan_markets(cfg: dict, verbose: bool = False):
                             'stop_loss': prev_pos.get('sl', ''),
                             'take_profit': prev_pos.get('tp', ''),
                             'lot_size': prev_pos['lot_size'],
-                            'risk_percent': risk,
+                            'risk_percent': prev_pos.get('risk_percent', risk),
                             'status': 'CLOSED',
                             'exit_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                             'exit_price': exit_price,
                             'profit': f"{profit:.2f}"
                         })
                         
-                        # Notify AI brain of trade close
+                        # ADVANCED AI LEARNING - Learn from closed trades
+                        try:
+                            advanced_brain = get_advanced_brain()
+                            
+                            # Determine outcome
+                            if profit > 0:
+                                outcome = TradeOutcome.WIN
+                            elif profit < 0:
+                                outcome = TradeOutcome.LOSS
+                            else:
+                                outcome = TradeOutcome.BREAKEVEN
+                            
+                            # Record for learning
+                            advanced_brain.update_after_trade(
+                                symbol=symbol,
+                                features={},  # Would extract from trade data
+                                outcome=outcome,
+                                pl=profit,
+                                hour=datetime.now().hour
+                            )
+                        except Exception as e:
+                            print(f"[!] Advanced AI learning error: {e}")
+                        
+                        # Notify old AI brain of trade close
                         try:
                             brain.on_trade_closed(symbol, exit_price, profit)
                         except Exception:
@@ -1231,8 +1432,23 @@ def scan_markets(cfg: dict, verbose: bool = False):
         dir_char = '▲' if signal['direction'] == 'BUY' else '▼'
         print(f"\n>>> NEW SIGNAL: {dir_char} {signal['direction']} {symbol} @ {signal['entry']} | TP:{signal['tp']} SL:{signal['stop']}")
         
+        # Multi-timeframe confirmation (H1)
+        params_for_htf = get_instrument_settings(symbol)
+        htf_bias = get_htf_bias(symbol, params_for_htf, timeframe=mt5.TIMEFRAME_H1)
+
+        # Gate disabled for learning phase unless confidence is extremely low
+        conf = float(signal.get('confidence', 0.6))
+        opposes = (htf_bias == 'BULL' and signal['direction'] == 'SELL') or (htf_bias == 'BEAR' and signal['direction'] == 'BUY')
+        if htf_bias in ('BULL', 'BEAR') and opposes and conf < 0.25:
+            print(f"⚠️  {symbol}: Rejected by HTF ({htf_bias}) with ultra-low confidence {conf:.0%}")
+            status.append(f"{symbol}:MTF")
+            continue
+
+        # Adjust risk based on AI + HTF
+        risk_used = adjust_risk_percent(risk, signal, htf_bias)
+
         # Don't send signal alert - will send when position actually opens
-        success = open_position_with_retry(signal, sym_info, risk)
+        success = open_position_with_retry(signal, sym_info, risk_used)
         
         if success:
             sig_key = f"{symbol}_{signal['direction']}"
@@ -1243,7 +1459,8 @@ def scan_markets(cfg: dict, verbose: bool = False):
                 f"{signal['direction']} {symbol}\n"
                 f"Entry: {signal['entry']}\n"
                 f"🎯 TP: {signal['tp']}\n"
-                f"🛑 SL: {signal['stop']}"
+                f"🛑 SL: {signal['stop']}\n"
+                f"⚠️ Risk: {risk_used}%  | HTF: {htf_bias}"
             )
             
             # Track this position for closure detection
@@ -1270,7 +1487,9 @@ def scan_markets(cfg: dict, verbose: bool = False):
                     'tp': signal['tp'],
                     'lot_size': signal.get('lot_size', 0),
                     'open_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'entry_regime': entry_regime
+                    'entry_regime': entry_regime,
+                    'risk_percent': risk_used,
+                    'htf_bias': htf_bias
                 }
                 
                 # Notify AI brain of trade open
@@ -1296,7 +1515,7 @@ def scan_markets(cfg: dict, verbose: bool = False):
 def main():
     parser = argparse.ArgumentParser(description="LIVE Trading Bot")
     parser.add_argument('--once', action='store_true', help='Single scan and exit')
-    parser.add_argument('--loop', type=int, default=30, help='Seconds between scans (default: 30)')
+    parser.add_argument('--loop', type=int, default=10, help='Seconds between scans (default: 10)')
     args = parser.parse_args()
 
     print("=" * 60)
@@ -1351,7 +1570,7 @@ def main():
         if args.once:
             scan_markets(cfg)
         else:
-            interval = max(5, args.loop)
+            interval = max(2, args.loop)
             print(f"[+] Scanning every {interval}s (Ctrl+C to stop)")
             print(f"[🤖] Self-learning enabled - optimizing every {OPTIMIZER_INTERVAL}s\n")
             
@@ -1383,7 +1602,7 @@ def main():
             # Start AI brain analysis thread for real-time intelligence
             brain_active = threading.Event()
             brain_active.set()
-            brain_analysis_interval = 60  # Analyze every 60 seconds
+            brain_analysis_interval = 20  # Analyze every 20 seconds for faster reactions
             last_brain_analysis = time.time()
             
             def brain_analysis_loop():

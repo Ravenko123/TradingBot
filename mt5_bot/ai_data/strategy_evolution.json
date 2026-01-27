@@ -4,7 +4,7 @@
       "EMA_Fast": 20,
       "EMA_Slow": 50,
       "ADX": 10.0,
-      "ATR_Mult": 1.25,
+      "ATR_Mult": 1.0,
       "Trades": 172,
       "Win_Rate": 44.18604651162791,
       "Profit": 1444.199999999988,
@@ -15,7 +15,7 @@
       "EMA_Fast": 20,
       "EMA_Slow": 150,
       "ADX": 10.0,
-      "ATR_Mult": 1.25,
+      "ATR_Mult": 1.0,
       "Trades": 157,
       "Win_Rate": 45.22292993630573,
       "Profit": 2477.9999999998763,
@@ -26,7 +26,7 @@
       "EMA_Fast": 10,
       "EMA_Slow": 50,
       "ADX": 10.0,
-      "ATR_Mult": 4.0,
+      "ATR_Mult": 1.0,
       "Trades": 54,
       "Win_Rate": 51.85185185185185,
       "Profit": 2478.4000000000306,
@@ -37,7 +37,7 @@
       "EMA_Fast": 10,
       "EMA_Slow": 100,
       "ADX": 10.0,
-      "ATR_Mult": 2.0,
+      "ATR_Mult": 4.5,
       "Trades": 76,
       "Win_Rate": 50.0,
       "Profit": 31694.999999999556,
@@ -59,7 +59,7 @@
       "EMA_Fast": 15,
       "EMA_Slow": 175,
       "ADX": 10.0,
-      "ATR_Mult": 1.0,
+      "ATR_Mult": 3.75,
       "Trades": 86,
       "Win_Rate": 38.372093023255815,
       "Profit": 16270.999999999913,
@@ -70,7 +70,7 @@
       "EMA_Fast": 10,
       "EMA_Slow": 30,
       "ADX": 10.0,
-      "ATR_Mult": 1.0,
+      "ATR_Mult": 2.25,
       "Trades": 94,
       "Win_Rate": 54.25531914893617,
       "Profit": 11613.500000000065,
@@ -78,5 +78,5 @@
       "PF": 1.958723737978297
     }
   },
-  "last_updated": "2026-01-26T20:19:29.908349+00:00"
+  "last_updated": "2026-01-27T14:01:24.049188+00:00"
 }

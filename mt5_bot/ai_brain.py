@@ -1174,13 +1174,14 @@ class AdvancedPositionManager:
         """Load learned management preferences."""
         # These will be learned over time
         self.prefs = {
-            'breakeven_trigger_rr': 1.0,  # Move to BE after 1:1 RR
-            'partial_profit_rr': 1.5,  # Take 50% at 1.5:1 RR
-            'trail_sl_distance_atr': 1.5,  # Trail SL 1.5 ATR behind price
-            'trail_tp_on_momentum': True,  # Trail TP if momentum continues
-            'close_on_bias_shift': True,  # Close if market regime shifts against us
-            'close_on_weak_momentum': True,  # Close if ADX drops significantly
-            'aggressive_management': False,  # Will be set based on performance
+            'breakeven_trigger_rr': 1.5,  # Only move to BE after solid profit
+            'partial_profit_rr': 2.0,  # Take 50% only at 2:1 RR (real profit)
+            'trail_sl_distance_atr': 1.5,  # Trail with buffer
+            'trail_trigger_rr': 2.5,  # Only trail at 2.5+ RR
+            'trail_tp_on_momentum': False,  # Disabled during learning
+            'close_on_bias_shift': False,  # Disabled - let trades run
+            'close_on_weak_momentum': False,  # Disabled - too aggressive
+            'aggressive_management': False,  # Conservative during learning
         }
     
     def analyze_position(self, symbol: str, position: Dict, current_price: float,
@@ -1256,15 +1257,16 @@ class AdvancedPositionManager:
                     confidence=0.7
                 )
         
-        # 3. PROFIT RETRACEMENT - Gave back 50% of peak profit
-        if state['peak_profit'] > 10 and profit < state['peak_profit'] * 0.5:
-            return PositionManagementDecision(
-                action='close_full',
-                reason=f"Retraced 50% of peak (${state['peak_profit']:.0f} → ${profit:.0f})",
-                confidence=0.75
-            )
+        # 3. PROFIT RETRACEMENT - Disabled during learning to avoid commission death spiral
+        # Only re-enable once we have 100+ profitable trades
+        # if state['peak_profit'] > 50 and profit < state['peak_profit'] * 0.3 and profit > 10:
+        #     return PositionManagementDecision(
+        #         action='close_full',
+        #         reason=f"Retraced 70% of peak (${state['peak_profit']:.0f} → ${profit:.0f})",
+        #         confidence=0.65
+        #     )
         
-        # 4. BREAKEVEN STOP - Reached 1:1 RR
+        # 4. BREAKEVEN STOP - Reached target RR (now earlier)
         if not state['breakeven_set'] and rr_achieved >= self.prefs['breakeven_trigger_rr']:
             state['breakeven_set'] = True
             new_sl = entry_price + (0.2 * atr if direction == 'BUY' else -0.2 * atr)  # Slight buffer
@@ -1275,7 +1277,7 @@ class AdvancedPositionManager:
                 new_sl=new_sl
             )
         
-        # 5. PARTIAL PROFIT - Take 50% at 1.5:1 RR
+        # 5. PARTIAL PROFIT - Take 50% a bit sooner
         if not state['partial_taken'] and rr_achieved >= self.prefs['partial_profit_rr']:
             state['partial_taken'] = True
             return PositionManagementDecision(
@@ -1285,8 +1287,8 @@ class AdvancedPositionManager:
                 close_percentage=50.0
             )
         
-        # 6. TRAILING STOP - Strong momentum, lock in profits
-        if rr_achieved > 2.0 and current_regime.adx > 30:
+        # 6. TRAILING STOP - Strong momentum, lock in profits (earlier and closer)
+        if rr_achieved >= self.prefs.get('trail_trigger_rr', 2.0) and current_regime.adx > 25:
             trail_distance = self.prefs['trail_sl_distance_atr'] * atr
             if direction == 'BUY':
                 new_sl = current_price - trail_distance

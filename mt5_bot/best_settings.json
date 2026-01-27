@@ -5,7 +5,7 @@
     "XAUUSD": {
       "EMA_Fast": 10,
       "EMA_Slow": 100,
-      "ADX": 30.0,
+      "ADX": 15.0,
       "ATR_Mult": 1.5,
       "Trades": 76,
       "Win_Rate": 50.0,
@@ -16,7 +16,7 @@
     "USDJPY": {
       "EMA_Fast": 10,
       "EMA_Slow": 50,
-      "ADX": 20.0,
+      "ADX": 10.0,
       "ATR_Mult": 1.5,
       "Trades": 54,
       "Win_Rate": 51.85185185185185,
@@ -27,7 +27,7 @@
     "GBPUSD": {
       "EMA_Fast": 20,
       "EMA_Slow": 150,
-      "ADX": 25.0,
+      "ADX": 12.0,
       "ATR_Mult": 2.0,
       "Trades": 157,
       "Win_Rate": 45.22292993630573,
@@ -38,7 +38,7 @@
     "EURUSD": {
       "EMA_Fast": 20,
       "EMA_Slow": 50,
-      "ADX": 20.0,
+      "ADX": 10.0,
       "ATR_Mult": 2.0,
       "Trades": 172,
       "Win_Rate": 44.18604651162791,
@@ -49,7 +49,7 @@
     "NAS100": {
       "EMA_Fast": 10,
       "EMA_Slow": 30,
-      "ADX": 30.0,
+      "ADX": 15.0,
       "ATR_Mult": 3.0,
       "Trades": 94,
       "Win_Rate": 54.25531914893617,
@@ -60,7 +60,7 @@
     "GBPJPY": {
       "EMA_Fast": 15,
       "EMA_Slow": 150,
-      "ADX": 10.0,
+      "ADX": 5.0,
       "ATR_Mult": 2.5,
       "Trades": 98,
       "Win_Rate": 46.93877551020408,
@@ -71,7 +71,7 @@
     "BTCUSD": {
       "EMA_Fast": 15,
       "EMA_Slow": 175,
-      "ADX": 45.0,
+      "ADX": 25.0,
       "ATR_Mult": 1.5,
       "Trades": 86,
       "Win_Rate": 38.372093023255815,

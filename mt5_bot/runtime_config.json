@@ -1,5 +1,5 @@
 {
-  "risk_percent": 5.0,
+  "risk_percent": 15.0,
   "enabled_symbols": [
     "BTCUSD",
     "EURUSD",
