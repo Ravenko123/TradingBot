@@ -35,6 +35,14 @@ from telegram_bot import send_telegram_message, TELEGRAM_BOT_TOKEN, TELEGRAM_CHA
 from ai_brain import get_brain, TradingIntelligenceBrain
 from advanced_ai_brain import get_advanced_brain, TradeOutcome
 
+# Import Neural AI (real machine learning)
+try:
+    from neural_ai import get_neural_ai, NeuralTradingAI
+    NEURAL_AI_AVAILABLE = True
+except ImportError:
+    NEURAL_AI_AVAILABLE = False
+    print("⚠️ Neural AI not available - install sklearn for ML features")
+
 # ============================================================================
 # CONFIG
 # ============================================================================
@@ -974,6 +982,39 @@ class TelegramBot:
                     else:
                         send_telegram_message("Usage: /brain <symbol>  e.g., /brain xauusd")
                 
+                # /neural command — Neural AI (Machine Learning) status
+                elif text == '/neural':
+                    if NEURAL_AI_AVAILABLE:
+                        try:
+                            neural_ai = get_neural_ai()
+                            stats = neural_ai.get_stats()
+                            
+                            lines = ["🧠 <b>NEURAL TRADING AI</b>\n━━━━━━━━━━━━━━━━"]
+                            lines.append(f"\n📊 <b>Training Stats:</b>")
+                            lines.append(f"   • Trades Learned: {stats['total_trades']}")
+                            lines.append(f"   • Win Rate: {stats['win_rate']:.1%}")
+                            lines.append(f"   • Total Profit: ${stats['total_profit']:.2f}")
+                            lines.append(f"   • Memory Size: {stats['memory_size']} experiences")
+                            
+                            lines.append(f"\n🎯 <b>Model Status:</b>")
+                            lines.append(f"   • Exploration Rate (ε): {stats['epsilon']:.3f}")
+                            lines.append(f"   • Models Fitted: {'✅' if stats['models_fitted'] else '❌'}")
+                            
+                            if stats['symbol_stats']:
+                                lines.append(f"\n📈 <b>Per-Symbol Performance:</b>")
+                                for sym, sym_stats in list(stats['symbol_stats'].items())[:5]:
+                                    total = sym_stats['wins'] + sym_stats['losses']
+                                    wr = sym_stats['wins'] / total if total > 0 else 0
+                                    lines.append(f"   • {sym}: {wr:.0%} WR, ${sym_stats['profit']:.0f}")
+                            
+                            lines.append(f"\n━━━━━━━━━━━━━━━━\n🤖 Real ML is ACTIVE!")
+                            
+                            send_telegram_message('\n'.join(lines))
+                        except Exception as e:
+                            send_telegram_message(f"🧠 Neural AI Error: {str(e)[:100]}")
+                    else:
+                        send_telegram_message("🧠 Neural AI not available.\nInstall sklearn: pip install scikit-learn")
+                
                 # /ai command — advanced AI statistics
                 elif text == '/ai':
                     try:
@@ -1222,6 +1263,39 @@ def process_single_symbol(symbol: str, enabled: set, risk: float) -> tuple:
                 sym_info['bid'], sym_info['ask'], sym_info['spread']
             )
             
+            # 🧠 NEURAL AI - REAL Machine Learning Analysis
+            if NEURAL_AI_AVAILABLE and signal.get('ai_approved', False):
+                try:
+                    neural_ai = get_neural_ai()
+                    direction = signal.get('direction', 'BUY')
+                    current_price = sym_info['bid'] if direction == 'SELL' else sym_info['ask']
+                    atr_value = df_ai['ATR'].iloc[-1] if 'ATR' in df_ai.columns else 0.001
+                    
+                    neural_result = neural_ai.analyze_entry(
+                        symbol, df_ai, direction, current_price, atr_value
+                    )
+                    
+                    # Neural AI can boost or reduce confidence
+                    neural_conf = neural_result.get('confidence', 0.5)
+                    original_conf = signal.get('confidence', 0.6)
+                    
+                    # Blend confidences: 40% original, 60% neural
+                    blended_conf = original_conf * 0.4 + neural_conf * 0.6
+                    signal['confidence'] = blended_conf
+                    signal['neural_confidence'] = neural_conf
+                    signal['neural_approved'] = neural_result.get('should_trade', True)
+                    
+                    # Store features for learning later
+                    signal['neural_features'] = neural_result.get('features', [])
+                    
+                    if neural_conf < 0.35:
+                        print(f"🧠 {symbol}: Neural AI LOW confidence ({neural_conf:.1%}) - cautious")
+                    elif neural_conf > 0.65:
+                        print(f"🧠 {symbol}: Neural AI HIGH confidence ({neural_conf:.1%}) - aggressive")
+                    
+                except Exception as e:
+                    print(f"[!] Neural AI error on {symbol}: {e}")
+            
             # If advanced AI disapproves, reject signal
             if not signal.get('ai_approved', False):
                 print(f"⚠️  {symbol}: Signal rejected - {signal.get('reason', 'Low confidence')}")
@@ -1387,6 +1461,28 @@ def scan_markets(cfg: dict, verbose: bool = False):
                             )
                         except Exception as e:
                             print(f"[!] Advanced AI learning error: {e}")
+                        
+                        # 🧠 NEURAL AI LEARNING - Learn from closed trade
+                        if NEURAL_AI_AVAILABLE:
+                            try:
+                                neural_ai = get_neural_ai()
+                                
+                                # Get stored features from entry (if available)
+                                entry_features = prev_pos.get('neural_features', None)
+                                if entry_features is not None:
+                                    import numpy as np
+                                    entry_features = np.array(entry_features)
+                                    
+                                    neural_ai.record_trade_result(
+                                        symbol=symbol,
+                                        entry_features=entry_features,
+                                        exit_features=entry_features,  # Use same for now
+                                        profit=profit,
+                                        direction=prev_pos['direction']
+                                    )
+                                    print(f"🧠 Neural AI learned from {symbol} trade: ${profit:.2f}")
+                            except Exception as e:
+                                print(f"[!] Neural AI learning error: {e}")
                         
                         # Notify old AI brain of trade close
                         try:
