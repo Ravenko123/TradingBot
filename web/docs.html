@@ -3,15 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Documentation - EURUSD Trading Bot</title>
-    <link rel="stylesheet" href="css/style.css">
+    <title>Documentation — Zenith Trading Bot</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260225-2">
+    <link rel="shortcut icon" href="/favicon.svg?v=20260225-2">
+    <link rel="apple-touch-icon" href="/favicon.svg?v=20260225-2">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css?v=20260226-3">
     <link rel="stylesheet" href="css/docs.css">
 </head>
 <body>
+    <!-- Cosmic Background Layers -->
+    <div class="ghost-pairs-layer" id="ghostPairsLayer"></div>
+    <div class="cursor-glow" id="cursorGlow"></div>
+
     <!-- Navigation -->
     <nav class="navbar">
         <div class="container">
-            <a href="index.html" class="logo">EURUSD<span>Trading</span></a>
+            <a href="index.html" class="logo">Zenith</a>
             <ul class="nav-menu">
                 <li><a href="index.html">Home</a></li>
                 <li><a href="dashboard.html">Dashboard</a></li>
@@ -45,21 +55,21 @@
         <main class="docs-content">
             <section id="getting-started" class="doc-section">
                 <h1>Getting Started</h1>
-                <p class="lead">Welcome to the EURUSD Trading Bot documentation. This guide covers the EMA crossover strategy, backtesting engine, and optimization framework.</p>
+                <p class="lead">Welcome to the Zenith Trading Bot documentation. This guide covers the ICT/SMC strategy engine, backtesting, and dashboard setup.</p>
                 
                 <div class="alert alert-info">
-                    <strong>Note:</strong> This is an educational project created for learning purposes. Always test thoroughly before using with real money.
+                    <strong>Note:</strong> This is an educational project. Always test on a demo account before using with real money.
                 </div>
 
-                <h2>What is EURUSD Trading Bot?</h2>
-                <p>EURUSD Trading Bot is an algorithmic trading system that implements a trend-following EMA crossover strategy on the EURUSD M15 timeframe. The system features:</p>
+                <h2>What is Zenith?</h2>
+                <p>Zenith is an algorithmic trading system that implements an ICT/SMC (Inner Circle Trader / Smart Money Concepts) strategy on the M15 timeframe across 7 symbols. The system features:</p>
                 <ul>
-                    <li>EMA crossover with RSI confirmation</li>
+                    <li>ICT/SMC state-machine signal engine with confluence scoring</li>
                     <li>Professional backtesting engine with real MT5 data</li>
-                    <li>Grid search optimization (64+ parameters)</li>
-                    <li>Real-time performance monitoring and analysis</li>
-                    <li>Risk management and position sizing</li>
-                    <li>Telegram bot integration for remote control</li>
+                    <li>Split-sample and walk-forward validation</li>
+                    <li>Real-time web dashboard with performance monitoring</li>
+                    <li>Break-even trailing and ATR-based risk management</li>
+                    <li>Telegram bot integration for alerts and remote control</li>
                 </ul>
             </section>
 
@@ -112,28 +122,31 @@ cd tradingbot</code></pre>
                 <h1>Configuration</h1>
                 
                 <h2>Strategy Configuration</h2>
-                <p>Edit <code>config/strategy_config.py</code> to configure strategy parameters for each instrument.</p>
+                <p>The ICT/SMC strategy parameters are configured in <code>mt5_bot/simple_backtest.py</code>:</p>
 
-                <h3>Grid Strategy Example:</h3>
+                <h3>ICT/SMC Parameters:</h3>
                 <div class="code-block">
-                    <pre><code>"BTCUSD": {
-    "grid_levels": 15,           # Number of grid levels
-    "use_atr_spacing": True,     # Use dynamic ATR spacing
-    "atr_spacing_mult": 0.5,     # ATR multiplier for spacing
-    "sl_multiplier": 6,          # Stop loss = 6 * grid spacing
-    "max_positions": 15,         # Maximum concurrent positions
-    "risk_per_trade": 10.0,      # % of account per trade
-    "atr_period": 14,            # ATR calculation period
-    "atr_timeframe": "M5"        # Timeframe for ATR
-}</code></pre>
+                    <pre><code>EMA_FAST = 9           # Fast EMA period
+EMA_SLOW = 21          # Slow EMA period
+ADX_PERIOD = 14        # ADX calculation period
+ADX_THRESHOLD = 25     # Minimum trend strength (Doc: <25 = consolidation)
+ATR_PERIOD = 14        # ATR calculation period
+ATR_MULTIPLIER = 1.0   # Stop loss = ATR x multiplier
+RISK_REWARD = 2.0      # Take profit = SL x R:R
+RISK_PERCENT = 2.0     # Risk 2% of account per trade
+BACKTEST_DAYS = 180    # 6 months of data</code></pre>
                 </div>
 
-                <h2>Risk Management</h2>
-                <p>Configure risk parameters in <code>config/settings.py</code>:</p>
+                <h2>Signal Confluence Scoring</h2>
+                <p>Each entry is scored on 7 factors (minimum score of 3 required):</p>
                 <ul>
-                    <li><strong>Max Daily Loss:</strong> Maximum loss per day before stopping</li>
-                    <li><strong>Max Position Size:</strong> Maximum percentage of account per position</li>
-                    <li><strong>Max Open Trades:</strong> Maximum number of concurrent trades</li>
+                    <li><strong>+1</strong> Displacement BOS candle (strong body)</li>
+                    <li><strong>+1</strong> Fair Value Gap in the impulse</li>
+                    <li><strong>+1</strong> Liquidity sweep before the move</li>
+                    <li><strong>+1</strong> Strong Order Block candle</li>
+                    <li><strong>+1</strong> Session kill zone (London 07-10 / NY 13-16 UTC)</li>
+                    <li><strong>+1</strong> Premium/Discount zone alignment</li>
+                    <li><strong>+1</strong> Rejection wick on entry candle</li>
                 </ul>
 
                 <h2>Telegram Bot Setup</h2>
@@ -151,28 +164,30 @@ cd tradingbot</code></pre>
             </section>
 
             <section id="strategies" class="doc-section">
-                <h1>Trading Strategies</h1>
+                <h1>Trading Strategy</h1>
 
-                <h2>1. Grid Trading Strategy</h2>
-                <p>Grid trading is a mean-reversion strategy that places buy and sell orders at regular intervals around a base price.</p>
+                <h2>ICT/SMC (Smart Money Concepts)</h2>
+                <p>The core strategy detects institutional order flow through a multi-bar state machine:</p>
                 
                 <h3>How It Works:</h3>
                 <ol>
-                    <li>Calculate grid spacing using ATR or fixed pips</li>
-                    <li>Place buy orders below current price</li>
-                    <li>Place sell orders above current price</li>
-                    <li>Take profit at next grid level</li>
-                    <li>Use stop loss for risk management</li>
+                    <li><strong>Trend Filter</strong> — EMA 9/21 determines bull/bear bias, ADX ≥ 25 confirms trend</li>
+                    <li><strong>Break of Structure</strong> — Price breaks a confirmed swing high/low with a displacement candle</li>
+                    <li><strong>Order Block Zone</strong> — Last strong opposite candle before the BOS impulse becomes an entry zone</li>
+                    <li><strong>Pullback Entry</strong> — Wait for price to retrace into the OB zone with a confirmation candle</li>
+                    <li><strong>Confluence Score</strong> — Score from FVG, displacement, sweep, session, premium/discount, rejection wick (≥ 3 required)</li>
+                    <li><strong>Risk Management</strong> — ATR-based SL, 2R TP, break-even at 1R (SL → entry price), trailing at 50% target (SL → 25% profit). Daily drawdown circuit breaker at 5%, margin protection at 20% usage.</li>
                 </ol>
 
-                <h3>Best For:</h3>
+                <h3>Supported Markets:</h3>
                 <ul>
-                    <li>Range-bound markets</li>
-                    <li>High volatility instruments (BTCUSD)</li>
-                    <li>24/7 automated trading</li>
+                    <li><strong>Forex:</strong> EURUSD, GBPUSD, USDJPY, GBPJPY</li>
+                    <li><strong>Metals:</strong> XAUUSD (Gold)</li>
+                    <li><strong>Crypto:</strong> BTCUSD (Bitcoin)</li>
+                    <li><strong>Indices:</strong> NAS100 (Nasdaq)</li>
                 </ul>
 
-                <h3>Performance:</h3>
+                <h3>Performance (Out-of-Sample):</h3>
                 <div class="performance-table">
                     <table>
                         <thead>
@@ -181,79 +196,45 @@ cd tradingbot</code></pre>
                                 <th>Timeframe</th>
                                 <th>Return</th>
                                 <th>Win Rate</th>
-                                <th>Sharpe</th>
+                                <th>PF</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr>
-                                <td>BTCUSD</td>
-                                <td>M5</td>
-                                <td>16,473%</td>
-                                <td>79.3%</td>
-                                <td>3.31</td>
-                            </tr>
-                            <tr>
-                                <td>EURUSD</td>
-                                <td>M5</td>
-                                <td>1,513%</td>
-                                <td>87.5%</td>
-                                <td>2.85</td>
-                            </tr>
+                            <tr><td>GBPJPY</td><td>M15</td><td>+7,131%</td><td>45.4%</td><td>3.09</td></tr>
+                            <tr><td>EURUSD</td><td>M15</td><td>+1,220%</td><td>38.3%</td><td>1.97</td></tr>
+                            <tr><td>XAUUSD</td><td>M15</td><td>+1,040%</td><td>43.9%</td><td>1.87</td></tr>
+                            <tr><td>NAS100</td><td>M15</td><td>+879%</td><td>40.3%</td><td>1.99</td></tr>
+                            <tr><td>GBPUSD</td><td>M15</td><td>+812%</td><td>35.8%</td><td>2.10</td></tr>
+                            <tr><td>USDJPY</td><td>M15</td><td>+387%</td><td>34.1%</td><td>1.56</td></tr>
+                            <tr><td>BTCUSD</td><td>M15</td><td>+376%</td><td>36.2%</td><td>1.87</td></tr>
                         </tbody>
                     </table>
                 </div>
-
-                <h2>2. ICT/SMC Strategy</h2>
-                <p>Inner Circle Trader and Smart Money Concepts strategy identifies institutional order blocks and liquidity zones.</p>
-                
-                <h3>Key Concepts:</h3>
-                <ul>
-                    <li><strong>Order Blocks:</strong> Areas where institutions have placed large orders</li>
-                    <li><strong>Fair Value Gaps:</strong> Imbalances in price action</li>
-                    <li><strong>Liquidity Sweeps:</strong> Stop-loss hunting patterns</li>
-                    <li><strong>Break of Structure:</strong> Trend change confirmations</li>
-                </ul>
-
-                <h2>3. HFT Scalper Strategy</h2>
-                <p>High-frequency trading scalping strategy for quick profits in volatile markets.</p>
-                
-                <h3>Features:</h3>
-                <ul>
-                    <li>Multiple timeframe analysis</li>
-                    <li>Momentum-based entries</li>
-                    <li>Tight stop losses</li>
-                    <li>High win rate, small targets</li>
-                </ul>
-
-                <h2>4. Mean Reversion Strategy</h2>
-                <p>Trades based on price returning to its mean after extreme moves.</p>
-                
-                <h3>Indicators Used:</h3>
-                <ul>
-                    <li>Bollinger Bands</li>
-                    <li>RSI (Relative Strength Index)</li>
-                    <li>Standard Deviation</li>
-                </ul>
+                <p><em>Note: Results from 180-day split backtest (70/30 train/test). 2% risk per trade with compounding. Past performance does not guarantee future results.</em></p>
             </section>
 
             <section id="backtesting" class="doc-section">
                 <h1>Backtesting</h1>
                 
                 <h2>Running a Backtest</h2>
-                <p>Test your strategy with historical data before risking real money:</p>
+                <p>Test the strategy with historical data before risking real money:</p>
 
                 <div class="code-block">
-                    <pre><code>python verify_backtest.py --symbol BTCUSD --strategy grid --start-date 2025-12-10 --end-date 2025-12-16</code></pre>
+                    <pre><code># Split backtest (70% train / 30% test)
+python mt5_bot/simple_backtest.py --mode split --split-ratio 0.7
+
+# Walk-forward analysis (rolling windows)
+python mt5_bot/simple_backtest.py --mode walk_forward
+
+# Standard backtest (full dataset)
+python mt5_bot/simple_backtest.py --mode standard</code></pre>
                 </div>
 
                 <h2>Backtest Parameters</h2>
                 <ul>
-                    <li><code>--symbol</code>: Trading symbol (e.g., BTCUSD, EURUSD)</li>
-                    <li><code>--strategy</code>: Strategy name (grid, ict_smc, hft_scalper)</li>
-                    <li><code>--start-date</code>: Backtest start date (YYYY-MM-DD)</li>
-                    <li><code>--end-date</code>: Backtest end date (YYYY-MM-DD)</li>
-                    <li><code>--timeframe</code>: Bar timeframe (M1, M5, M15, H1, H4, D1)</li>
-                    <li><code>--initial-balance</code>: Starting account balance</li>
+                    <li><code>--mode</code>: Backtest mode (split, walk_forward, standard)</li>
+                    <li><code>--split-ratio</code>: Train/test split ratio (default: 0.7)</li>
+                    <li><code>--symbol</code>: Single symbol to test (optional, tests all 7 by default)</li>
                 </ul>
 
                 <h2>Understanding Results</h2>
@@ -287,9 +268,9 @@ cd tradingbot</code></pre>
                 </div>
 
                 <h2>Optimizing Parameters</h2>
-                <p>Use the parameter sweep script to find optimal settings:</p>
+                <p>Parameters are tuned in <code>mt5_bot/simple_backtest.py</code> at the top of the file. Run split backtests to validate changes:</p>
                 <div class="code-block">
-                    <pre><code>python scripts/sweep_btc_grid.py</code></pre>
+                    <pre><code>python mt5_bot/simple_backtest.py --mode split --split-ratio 0.7</code></pre>
                 </div>
             </section>
 
@@ -336,7 +317,7 @@ cd tradingbot</code></pre>
             <section id="api-reference" class="doc-section">
                 <h1>API Reference</h1>
                 
-                <p>The Ultima API provides programmatic access to bot data and controls.</p>
+                <p>The Zenith API provides programmatic access to bot data and controls.</p>
 
                 <h2>Base URL</h2>
                 <div class="code-block">
@@ -352,8 +333,8 @@ cd tradingbot</code></pre>
                     <div class="code-block">
                         <pre><code>{
     "status": "running",
-    "active_strategy": "grid",
-    "timestamp": "2025-12-18T10:30:00"
+    "active_strategy": "ict_smc",
+    "timestamp": "2026-02-25T10:30:00"
 }</code></pre>
                     </div>
                 </div>
@@ -418,14 +399,14 @@ cd tradingbot</code></pre>
                     <h4>Request Body:</h4>
                     <div class="code-block">
                         <pre><code>{
-    "strategy": "grid"
+    "strategy": "ict_smc"
 }</code></pre>
                     </div>
                     <h4>Response:</h4>
                     <div class="code-block">
                         <pre><code>{
     "success": true,
-    "message": "Bot started with grid strategy"
+    "message": "Bot started with ict_smc strategy"
 }</code></pre>
                     </div>
                 </div>
@@ -517,9 +498,11 @@ cd tradingbot</code></pre>
     <!-- Footer -->
     <footer class="footer">
         <div class="container">
-            <p>&copy; 2025 Ultima. Academic Project - For Educational Purposes Only.</p>
+            <p>&copy; 2025 Zenith Trading Bot. Academic Project.</p>
             <p><a href="#getting-started">Documentation</a> | <a href="about.html">About</a> | <a href="https://github.com">GitHub</a></p>
         </div>
     </footer>
+
+    <script src="js/main.js"></script>
 </body>
 </html>

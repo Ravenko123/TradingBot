@@ -1,9 +1,4 @@
-"""
-Telegram Notification Bot for MT5 Trading EA
-Educational Graduation Project 2026
-
-This simple script sends trading notifications to your Telegram chat.
-"""
+# telegram notifications
 
 import os
 import sys
@@ -12,9 +7,7 @@ import requests
 from datetime import datetime
 from pathlib import Path
 
-# ============================================
-# CONFIGURATION - LOAD FROM JSON
-# ============================================
+# config
 config_file = Path(__file__).parent / 'telegram_config.json'
 if config_file.exists():
     with open(config_file, 'r') as f:
@@ -25,11 +18,7 @@ else:
     TELEGRAM_BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
     TELEGRAM_CHAT_ID = "YOUR_CHAT_ID_HERE"
 
-# ============================================
-# SCRIPT LOGIC (No need to modify below)
-# ============================================
 
-# Track if we've already warned about missing config (avoid spam)
 _telegram_warning_shown = False
 
 def send_telegram_message(message, silent: bool = True):
@@ -68,7 +57,8 @@ def send_telegram_message(message, silent: bool = True):
     # Prepare request payload
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "text": full_message
+        "text": full_message,
+        "parse_mode": "HTML"
     }
     
     try:

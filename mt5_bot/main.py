@@ -1,25 +1,16 @@
-"""
-LIVE Trading Bot - Scans real-time MT5 market data and sends Telegram signals.
-Uses the optimized EMA/ADX/ATR strategy with parameters from best_settings.json.
-NOW WITH AI BRAIN: Self-learning, market-aware adaptive intelligence.
+# live trading bot — ICT / SMC strategy engine
+# Documentation: Automatizovaný obchodný systém s Python + MetaTrader 5
+# State machine: IDLE → SCANNING → ZONING → MONITORING → EXECUTION → MANAGEMENT
 
-Usage:
-  python main.py              # default: scan every 5 seconds
-  python main.py --loop 10    # scan every 10 seconds
-  python main.py --once       # single scan and exit
-
-Telegram Commands:
-  /risk 2.5    - Set risk to 2.5% per trade
-  /eurusd      - Toggle EURUSD on/off
-  /status      - Show current config
-  /brain       - AI brain status & insights
-"""
 import argparse
 import csv
 import json
+import math
 import os
+import sys
 import time
 import threading
+from enum import Enum
 from pathlib import Path
 from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -30,10 +21,122 @@ import requests
 
 import MetaTrader5 as mt5
 
+# .env support (MT5_LOGIN, TELEGRAM_BOT_TOKEN, RISK_PER_TRADE, …)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent / '.env')
+except ImportError:
+    pass  # python-dotenv optional; falls back to json configs
+
 from strategy import get_instrument_settings
 from telegram_bot import send_telegram_message, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-from ai_brain import get_brain, TradingIntelligenceBrain
-from advanced_ai_brain import get_advanced_brain, TradeOutcome
+
+# SQLite database (trades, order_blocks, logs)
+from db import (
+    init_trading_db, insert_trade, close_trade, get_daily_pnl,
+    insert_order_block, mitigate_order_block, get_active_order_blocks,
+    log_event, get_trades,
+)
+
+
+# ─── State Machine ──────────────────────────────────────────────
+class BotState(Enum):
+    """Trading engine finite-state machine (6 states per documentation)."""
+    IDLE       = "IDLE"        # Waiting for session / outside kill-zone
+    SCANNING   = "SCANNING"    # Analyzing market data & indicators
+    ZONING     = "ZONING"      # Mapping OB / FVG / BOS zones
+    MONITORING = "MONITORING"  # Watching for pullback into OB zone
+    EXECUTION  = "EXECUTION"   # Sending order to MT5
+    MANAGEMENT = "MANAGEMENT"  # Managing open position (BE / trail / close)
+
+
+# Global state tracker
+_current_state = BotState.IDLE
+
+
+def set_state(new_state: BotState):
+    """Transition the bot FSM and log the change."""
+    global _current_state
+    if new_state != _current_state:
+        _current_state = new_state
+
+
+def get_state() -> BotState:
+    return _current_state
+
+
+def _configure_safe_console_output():
+    """Avoid crashes when terminal encoding cannot print emoji/unicode symbols."""
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None:
+            continue
+        try:
+            stream.reconfigure(errors='replace')
+        except Exception:
+            pass
+
+
+_configure_safe_console_output()
+
+# Optional AI layers (bot must still run without these files)
+try:
+    from ai_brain import get_brain, TradingIntelligenceBrain
+except ImportError:
+    class TradingIntelligenceBrain:
+        pass
+
+    class _FallbackBrain:
+        def initialize_symbol(self, *args, **kwargs):
+            return None
+        def process_market_data(self, *args, **kwargs):
+            return None
+        def manage_open_position(self, *args, **kwargs):
+            return None
+        def on_trade_opened(self, *args, **kwargs):
+            return None
+        def on_trade_closed(self, *args, **kwargs):
+            return None
+        def get_daily_summary(self):
+            return "AI brain unavailable"
+        def get_symbol_report(self, symbol):
+            return f"No AI report for {symbol}"
+        def cleanup(self):
+            return None
+
+    def get_brain():
+        print("[WARN] ai_brain.py not found - running with fallback brain")
+        return _FallbackBrain()
+
+try:
+    from advanced_ai_brain import get_advanced_brain, TradeOutcome
+except ImportError:
+    class TradeOutcome:
+        WIN = "WIN"
+        LOSS = "LOSS"
+        BREAKEVEN = "BREAKEVEN"
+
+    class _FallbackAdvancedBrain:
+        def __init__(self):
+            self.patterns = type('Patterns', (), {'patterns': {}})()
+            self.profiler = type('Profiler', (), {'profiles': {}})()
+            self.market_structure = type('MS', (), {
+                'order_flow': type('OF', (), {'history': []})()
+            })()
+        def analyze_signal(self, symbol, df_ai, signal, bid, ask, spread):
+            if not signal:
+                return None
+            signal.setdefault('confidence', 0.6)
+            signal.setdefault('ai_approved', True)
+            signal.setdefault('reason', 'fallback_advanced_ai')
+            return signal
+        def update_after_trade(self, *args, **kwargs):
+            return None
+
+    _ADVANCED_FALLBACK_INSTANCE = _FallbackAdvancedBrain()
+
+    def get_advanced_brain():
+        return _ADVANCED_FALLBACK_INSTANCE
 
 # Import Neural AI (real machine learning)
 try:
@@ -41,11 +144,9 @@ try:
     NEURAL_AI_AVAILABLE = True
 except ImportError:
     NEURAL_AI_AVAILABLE = False
-    print("⚠️ Neural AI not available - install sklearn for ML features")
+    print("[WARN] Neural AI not available - install sklearn for ML features")
 
-# ============================================================================
-# CONFIG
-# ============================================================================
+# config
 
 # Symbols to trade - MT5 provides real tick size, spread, digits
 SYMBOLS = ['EURUSD', 'GBPUSD', 'USDJPY', 'XAUUSD', 'GBPJPY', 'BTCUSD', 'NAS100']
@@ -54,16 +155,31 @@ SYMBOLS = ['EURUSD', 'GBPUSD', 'USDJPY', 'XAUUSD', 'GBPJPY', 'BTCUSD', 'NAS100']
 BROKER_SUFFIX = {'EURUSD': '+', 'GBPUSD': '+', 'USDJPY': '+', 'GBPJPY': '+', 'XAUUSD': '+'}
 
 # Strategy constants (same as backtested)
-SESSION_START = 0   # hour UTC (loosened for more data)
-SESSION_END = 23    # hour UTC
+# Session kill zones: London 07-10 UTC, New York 13-16 UTC
+SESSION_LONDON_START = 7
+SESSION_LONDON_END   = 10
+SESSION_NY_START     = 13
+SESSION_NY_END       = 16
 ATR_PERIOD = 14
 ADX_PERIOD = 14
-LOOKBACK_BARS = 500  # enough bars for indicator calculation
-TP_RR_RATIO = 2.0   # Take Profit at 2:1 risk-reward (TP = 2x SL distance)
+ADX_THRESHOLD = 25       # Doc: ADX < 25 = consolidation → skip
+LOOKBACK_BARS = 500      # enough bars for indicator calculation
+TP_RR_RATIO = 2.0        # Take Profit at 2:1 risk-reward (TP = 2× SL distance)
+
+# ICT / SMC constants (ported from validated backtest engine)
+BOS_VALIDITY = 50        # Order Block zone valid for 50 bars
+OB_SCAN = 20             # Look back up to 20 bars for OB candle
+SWING_LOOKBACK = 5       # Swing-point detection window
+MIN_CONFLUENCE = 3       # Minimum confluence score to enter
+COOLDOWN_BARS = 3        # Minimum bars between signals
+
+# Safety mechanisms — circuit breakers
+MAX_DAILY_DRAWDOWN = float(os.getenv('MAX_DAILY_DRAWDOWN', '5.0'))   # 5 % daily max loss → deactivate
+MAX_MARGIN_USAGE   = float(os.getenv('MAX_MARGIN_USAGE', '20.0'))    # Block orders if > 20 % margin used
 
 # Runtime config persistence
 CONFIG_FILE = Path(__file__).parent / 'runtime_config.json'
-DEFAULT_RISK = 1.0  # percent
+DEFAULT_RISK = float(os.getenv('RISK_PER_TRADE', '2.0'))  # Doc: 2 % per trade
 
 # Track last signal to avoid spam
 last_signals = {}
@@ -77,6 +193,7 @@ RETRY_DELAY = 1.0  # seconds
 
 # Trade logging (only closed trades)
 TRADE_LOG_FILE = 'liverun/live_trades.csv'
+RUNTIME_STATUS_FILE = Path(__file__).parent / 'liverun' / 'runtime_status.json'
 
 # Learned parameters (auto-adjusted by optimizer)
 LEARNED_PARAMS_FILE = 'liverun/learned_params.json'
@@ -85,9 +202,7 @@ LEARNED_PARAMS_FILE = 'liverun/learned_params.json'
 OPTIMIZER_INTERVAL = 300  # Run optimizer every 5 minutes
 MIN_TRADES_FOR_LEARNING = 5  # Min closed trades before adjusting params
 
-# ============================================================================
-# PARAMETER OPTIMIZER - Self-Learning Bot
-# ============================================================================
+# param optimizer
 
 class ParameterOptimizer:
     """Analyzes closed trades and auto-adjusts strategy parameters in real-time."""
@@ -216,9 +331,20 @@ optimizer = ParameterOptimizer()
 # Initialize AI Brain
 brain = get_brain()
 
-# ============================================================================
-# TRADE LOGGING
-# ============================================================================
+
+def update_runtime_status(**fields):
+    """Persist lightweight runtime heartbeat for dashboard/API diagnostics."""
+    try:
+        payload = {
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            **fields,
+        }
+        RUNTIME_STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        RUNTIME_STATUS_FILE.write_text(json.dumps(payload, indent=2))
+    except Exception:
+        pass
+
+# trade logging
 
 def log_trade(trade_data: dict):
     """Log trade to CSV file for live testing records."""
@@ -235,15 +361,15 @@ def log_trade(trade_data: dict):
         writer.writerow(trade_data)
 
 
-# ============================================================================
-# MT5 CONNECTION
-# ============================================================================
+# mt5 connection
 
 def init_mt5() -> bool:
     """Initialize MT5 connection."""
     if not mt5.initialize():
         print(f"[!] MT5 init failed: {mt5.last_error()}")
+        update_runtime_status(state='error', message=f"MT5 init failed: {mt5.last_error()}")
         return False
+    update_runtime_status(state='mt5_connected', message='MT5 initialized successfully')
     return True
 
 
@@ -311,9 +437,7 @@ def get_symbol_info(symbol: str) -> dict | None:
     }
 
 
-# ============================================================================
-# POSITION MANAGEMENT
-# ============================================================================
+# position mgmt
 
 def get_open_positions() -> list:
     """Get all open positions from MT5."""
@@ -510,8 +634,8 @@ def modify_position_sl_tp(position: dict, new_sl: float | None = None, new_tp: f
     return False
 
 
-def fetch_live_candles(symbol: str, timeframe=mt5.TIMEFRAME_M5, bars: int = LOOKBACK_BARS) -> pd.DataFrame | None:
-    """Fetch live candles from MT5."""
+def fetch_live_candles(symbol: str, timeframe=mt5.TIMEFRAME_M15, bars: int = LOOKBACK_BARS) -> pd.DataFrame | None:
+    """Fetch live candles from MT5 (M15 timeframe per documentation)."""
     # Check connection first
     if not check_mt5_connection():
         if not reconnect_mt5():
@@ -538,9 +662,7 @@ def fetch_live_candles(symbol: str, timeframe=mt5.TIMEFRAME_M5, bars: int = LOOK
     return df
 
 
-# ============================================================================
-# MULTI-TIMEFRAME CONTEXT
-# ============================================================================
+# multi-tf context
 
 def get_htf_bias(symbol: str, params: dict, timeframe = mt5.TIMEFRAME_H1) -> str:
     """Determine higher timeframe bias using EMAs and ADX.
@@ -577,9 +699,7 @@ def get_htf_bias(symbol: str, params: dict, timeframe = mt5.TIMEFRAME_H1) -> str
         return 'UNKNOWN'
 
 
-# ============================================================================
-# POSITION SIZING (risk scaling by confidence, phase, HTF alignment)
-# ============================================================================
+# position sizing
 
 def adjust_risk_percent(base_risk: float, signal: dict, htf_bias: str) -> float:
     """Scale risk % by AI confidence, market phase, and HTF alignment.
@@ -626,9 +746,7 @@ def adjust_risk_percent(base_risk: float, signal: dict, htf_bias: str) -> float:
     return scaled
 
 
-# ============================================================================
-# INDICATORS (same as backtested strategy)
-# ============================================================================
+# indicators
 
 def add_indicators(df: pd.DataFrame, fast_ema: int, slow_ema: int) -> pd.DataFrame:
     """Add EMA, ATR, ADX indicators."""
@@ -662,103 +780,340 @@ def add_indicators(df: pd.DataFrame, fast_ema: int, slow_ema: int) -> pd.DataFra
     return df
 
 
+def _find_swing_points(highs, lows, lookback=SWING_LOOKBACK):
+    """Detect swing highs and swing lows using lookback window (no future leak)."""
+    n = len(highs)
+    swing_highs = np.full(n, np.nan)
+    swing_lows = np.full(n, np.nan)
+    for i in range(lookback, n - lookback):
+        wh = highs[i - lookback: i + lookback + 1]
+        wl = lows[i - lookback: i + lookback + 1]
+        if highs[i] == np.max(wh):
+            swing_highs[i] = highs[i]
+        if lows[i] == np.min(wl):
+            swing_lows[i] = lows[i]
+    return swing_highs, swing_lows
+
+
+def in_session_kill_zone(hour: int) -> bool:
+    """Return True if current hour falls inside London or NY kill zone."""
+    return (SESSION_LONDON_START <= hour <= SESSION_LONDON_END) or \
+           (SESSION_NY_START <= hour <= SESSION_NY_END)
+
+
 def generate_signal(df: pd.DataFrame, params: dict, symbol: str, sym_info: dict) -> dict | None:
-    """Generate trading signal based on latest bar. Now integrated with AI Brain."""
+    """Generate ICT / SMC trading signal with confluence scoring.
+
+    HARD requirements (all must be true):
+      • EMA trend alignment (EMA 9 > EMA 21 for BUY, vice-versa)
+      • ADX ≥ threshold (skip consolidation)
+      • Valid Order Block zone from a BOS event
+      • Price pulls back into the OB zone
+      • Confirmation candle (close in trade direction)
+
+    CONFLUENCE SCORING (soft — need total ≥ MIN_CONFLUENCE):
+      +1  Displacement BOS (candle body ≥ 150 % of avg last 10)
+      +1  FVG present in the impulse
+      +1  Liquidity sweep before the move
+      +1  In session kill zone (London 07-10 / NY 13-16)
+      +1  Premium/Discount alignment
+      +1  Rejection wick on entry candle
+      +1  Strong OB candle (body > avg)
+    """
+    set_state(BotState.SCANNING)
+
     if not params:
         return None
-    
-    fast = int(params.get('EMA_Fast', 10))
-    slow = int(params.get('EMA_Slow', 50))
-    adx_th = float(params.get('ADX', 20))
+
+    fast = int(params.get('EMA_Fast', 9))
+    slow = int(params.get('EMA_Slow', 21))
+    adx_th = float(params.get('ADX', ADX_THRESHOLD))
     atr_mult = float(params.get('ATR_Mult', 1.5))
-    
-    # XAUUSD override: start with lower ADX to allow trading and learning
-    # The optimizer will adjust based on actual live performance
-    if symbol == 'XAUUSD':
-        adx_th = 15.0
+
+    # Brain param adaptation (AI layer)
+    try:
+        brain_analysis = brain.process_market_data(symbol, df, sym_info, params)
+        adapted_params = brain_analysis.get('params', {}) if brain_analysis else {}
+        if adapted_params:
+            adx_th = float(adapted_params.get('ADX', adx_th))
+            atr_mult = float(adapted_params.get('ATR_Mult', atr_mult))
+    except Exception:
+        pass
 
     df = add_indicators(df, fast, slow).fillna(0)
-    i = len(df) - 1
-    if i < max(slow, 50):
+    n = len(df)
+    if n < max(slow, 60):
         return None
 
-    # Get latest values
-    adx = df['ADX'].iat[i]
-    ema_f = df['EMA_Fast'].iat[i]
-    ema_s = df['EMA_Slow'].iat[i]
-    atr = df['ATR'].iat[i]
+    closes = df['Close'].to_numpy().astype(float)
+    opens  = df['Open'].to_numpy().astype(float)
+    highs  = df['High'].to_numpy().astype(float)
+    lows   = df['Low'].to_numpy().astype(float)
+    ema_f_arr = df['EMA_Fast'].to_numpy().astype(float)
+    ema_s_arr = df['EMA_Slow'].to_numpy().astype(float)
+    adx_arr   = df['ADX'].to_numpy().astype(float)
+    atr_arr   = df['ATR'].to_numpy().astype(float)
+    times     = pd.to_datetime(df['Time'])
+    hours     = times.dt.hour.to_numpy()
+
+    # Pre-compute helpers
+    swing_highs, swing_lows = _find_swing_points(highs, lows, SWING_LOOKBACK)
+    bodies = np.abs(closes - opens)
+
+    # Avg body of last 10 candles (per documentation: 150 % displacement)
+    avg_body_10 = np.zeros(n)
+    for j in range(10, n):
+        avg_body_10[j] = np.mean(bodies[j - 10:j])
+
+    # Avg body of last 20 for OB strength
+    avg_body_20 = np.zeros(n)
+    for j in range(20, n):
+        avg_body_20[j] = np.mean(bodies[j - 20:j])
+
+    set_state(BotState.ZONING)
+
+    # ── Scan for BOS events and build OB zones (last ~100 bars) ──
+    bull_obs = []  # {hi, lo, bar, score, strong_ob}
+    bear_obs = []
+    start = max(slow, 2 * SWING_LOOKBACK + 5, 42)
+    scan_from = max(start, n - 120)  # Only scan recent bars for live signals
+
+    for i in range(scan_from, n):
+        if not np.isfinite(adx_arr[i]) or adx_arr[i] < adx_th:
+            continue
+
+        bullish_trend = ema_f_arr[i] > ema_s_arr[i]
+        bearish_trend = ema_f_arr[i] < ema_s_arr[i]
+
+        # Find most recent swing high / swing low
+        recent_sh = np.nan
+        recent_sl_val = np.nan
+        for k in range(i - SWING_LOOKBACK - 1, max(start - 1, SWING_LOOKBACK) - 1, -1):
+            if np.isnan(recent_sh) and not np.isnan(swing_highs[k]):
+                recent_sh = swing_highs[k]
+            if np.isnan(recent_sl_val) and not np.isnan(swing_lows[k]):
+                recent_sl_val = swing_lows[k]
+            if not np.isnan(recent_sh) and not np.isnan(recent_sl_val):
+                break
+
+        # ── Bullish BOS ──
+        if bullish_trend and not np.isnan(recent_sh):
+            for k in range(max(start, i - SWING_LOOKBACK), i):
+                if closes[k] > recent_sh:
+                    # Displacement: BOS candle body ≥ 150 % of avg last 10
+                    bos_disp = bodies[k] > avg_body_10[k] * 1.5 if avg_body_10[k] > 0 else False
+
+                    # Find OB: last bearish candle before the impulse
+                    ob_hi, ob_lo, ob_strong = np.nan, np.nan, False
+                    for ob_idx in range(k, max(k - OB_SCAN, 0), -1):
+                        if closes[ob_idx] < opens[ob_idx]:
+                            ob_hi = highs[ob_idx]
+                            ob_lo = min(opens[ob_idx], closes[ob_idx])
+                            ob_strong = bodies[ob_idx] > avg_body_20[ob_idx] * 0.7 if avg_body_20[ob_idx] > 0 else False
+                            break
+                    if np.isnan(ob_hi):
+                        break
+
+                    score = 0
+                    if bos_disp:
+                        score += 1
+                    # FVG check
+                    for f in range(max(start, k - 8), k + 1):
+                        if f >= 2 and lows[f] > highs[f - 2]:
+                            score += 1
+                            break
+                    # Liquidity sweep
+                    if k >= 2 and lows[k - 1] < lows[k - 2] and closes[k - 1] > lows[k - 2]:
+                        score += 1
+                    if ob_strong:
+                        score += 1
+
+                    bull_obs.append({'hi': ob_hi, 'lo': ob_lo, 'bar': i, 'score': score})
+                    if len(bull_obs) > 3:
+                        bull_obs.pop(0)
+
+                    # Store OB in database
+                    try:
+                        insert_order_block(symbol=symbol, price_high=ob_hi, price_low=ob_lo, direction='BULL')
+                    except Exception:
+                        pass
+                    break
+
+        # ── Bearish BOS ──
+        if bearish_trend and not np.isnan(recent_sl_val):
+            for k in range(max(start, i - SWING_LOOKBACK), i):
+                if closes[k] < recent_sl_val:
+                    bos_disp = bodies[k] > avg_body_10[k] * 1.5 if avg_body_10[k] > 0 else False
+
+                    ob_hi, ob_lo, ob_strong = np.nan, np.nan, False
+                    for ob_idx in range(k, max(k - OB_SCAN, 0), -1):
+                        if closes[ob_idx] > opens[ob_idx]:
+                            ob_lo = lows[ob_idx]
+                            ob_hi = max(opens[ob_idx], closes[ob_idx])
+                            ob_strong = bodies[ob_idx] > avg_body_20[ob_idx] * 0.7 if avg_body_20[ob_idx] > 0 else False
+                            break
+                    if np.isnan(ob_lo):
+                        break
+
+                    score = 0
+                    if bos_disp:
+                        score += 1
+                    for f in range(max(start, k - 8), k + 1):
+                        if f >= 2 and highs[f] < lows[f - 2]:
+                            score += 1
+                            break
+                    if k >= 2 and highs[k - 1] > highs[k - 2] and closes[k - 1] < highs[k - 2]:
+                        score += 1
+                    if ob_strong:
+                        score += 1
+
+                    bear_obs.append({'hi': ob_hi, 'lo': ob_lo, 'bar': i, 'score': score})
+                    if len(bear_obs) > 3:
+                        bear_obs.pop(0)
+
+                    try:
+                        insert_order_block(symbol=symbol, price_high=ob_hi, price_low=ob_lo, direction='BEAR')
+                    except Exception:
+                        pass
+                    break
+
+    # Expire old OB zones
+    bull_obs = [z for z in bull_obs if (n - 1 - z['bar']) <= BOS_VALIDITY]
+    bear_obs = [z for z in bear_obs if (n - 1 - z['bar']) <= BOS_VALIDITY]
+
+    set_state(BotState.MONITORING)
+
+    # ── Check pullback entry on the LATEST bar ──
+    i = n - 1
     bar_time = df['Time'].iat[i]
-    hour = bar_time.hour
+    hour = hours[i]
+    adx_val = adx_arr[i]
+    ema_f = ema_f_arr[i]
+    ema_s = ema_s_arr[i]
+    atr_val = atr_arr[i]
 
     # Use LIVE bid/ask from MT5
     bid = sym_info['bid']
     ask = sym_info['ask']
     spread_points = sym_info['spread']
     digits = sym_info['digits']
-    
-    # ========== AI BRAIN INTEGRATION ==========
-    # Let the brain analyze market conditions and potentially adapt parameters
-    try:
-        brain_analysis = brain.process_market_data(symbol, df, sym_info, params)
-        # Let the AI adapt parameters but do not block trades during learning
-        adapted_params = brain_analysis.get('params', {}) if brain_analysis else {}
-        if adapted_params:
-            adx_th = float(adapted_params.get('ADX', adx_th))
-            atr_mult = float(adapted_params.get('ATR_Mult', atr_mult))
-            # XAUUSD still gets lower ADX for learning
-            if symbol == 'XAUUSD' and adx_th > 15:
-                adx_th = 15.0
-    except Exception as e:
-        # If brain fails, continue with original params
-        pass
-    # ==========================================
 
-    # Session filter
-    if not (SESSION_START <= hour <= SESSION_END):
-        return None
-    
-    # ADX filter (further loosened to let AI learn on weak structure)
-    relaxed_adx = max(8.0, adx_th * 0.4)
-    if adx <= relaxed_adx or not np.isfinite(adx):
+    # Session kill zone filter
+    if not in_session_kill_zone(hour):
+        set_state(BotState.IDLE)
         return None
 
-    # Signal logic (same as backtested)
-    if ema_f > ema_s:
-        direction = 'BUY'
-        entry = ask  # buy at ask
-        stop = entry - (atr_mult * atr)
-        tp = entry + (atr_mult * atr * TP_RR_RATIO)  # TP at RR ratio
-    elif ema_f < ema_s:
-        direction = 'SELL'
-        entry = bid  # sell at bid
-        stop = entry + (atr_mult * atr)
-        tp = entry - (atr_mult * atr * TP_RR_RATIO)  # TP at RR ratio
-    else:
+    # ADX filter — doc: ADX < 25 = consolidation → skip
+    if not np.isfinite(adx_val) or adx_val < adx_th:
         return None
 
-    return {
-        'symbol': symbol,
-        'broker_symbol': sym_info['broker_symbol'],
-        'direction': direction,
-        'entry': round(entry, digits),
-        'stop': round(stop, digits),
-        'tp': round(tp, digits),
-        'bid': bid,
-        'ask': ask,
-        'spread': spread_points,
-        'adx': round(adx, 2),
-        'atr': round(atr, digits),
-        'atr_mult': atr_mult,
-        'ema_fast': round(ema_f, digits),
-        'ema_slow': round(ema_s, digits),
-        'timestamp': bar_time,
-        'params': f"EMA {fast}/{slow}, ADX>{adx_th}, ATR×{atr_mult}"
-    }
+    bullish_trend = ema_f > ema_s
+    bearish_trend = ema_f < ema_s
+    if not bullish_trend and not bearish_trend:
+        return None
+
+    # Entry-level confluence helpers
+    range_lb = min(40, n - 1)
+    range_high = np.max(highs[i - range_lb:i]) if range_lb > 0 else highs[i]
+    range_low  = np.min(lows[i - range_lb:i]) if range_lb > 0 else lows[i]
+    range_mid  = (range_high + range_low) / 2.0
+    body_i = abs(closes[i] - opens[i])
+
+    signal_result = None
+
+    # ── BULLISH ENTRY ──
+    if bullish_trend:
+        for z_idx, z in enumerate(bull_obs):
+            if (i - z['bar']) < 1:
+                continue
+            touched = lows[i] <= z['hi'] and closes[i] >= z['lo']
+            bull_candle = closes[i] > opens[i]
+            if not (touched and bull_candle):
+                continue
+
+            entry_score = z['score']
+            if in_session_kill_zone(hour):
+                entry_score += 1
+            if closes[i] < range_mid:  # Discount zone
+                entry_score += 1
+            lower_wick = min(opens[i], closes[i]) - lows[i]
+            if body_i > 0 and lower_wick > body_i * 0.3:
+                entry_score += 1  # Rejection wick
+
+            if entry_score >= MIN_CONFLUENCE:
+                entry = ask
+                stop = entry - (atr_mult * atr_val)
+                tp = entry + (atr_mult * atr_val * TP_RR_RATIO)
+                signal_result = {
+                    'symbol': symbol,
+                    'broker_symbol': sym_info['broker_symbol'],
+                    'direction': 'BUY',
+                    'entry': round(entry, digits),
+                    'stop': round(stop, digits),
+                    'tp': round(tp, digits),
+                    'bid': bid, 'ask': ask,
+                    'spread': spread_points,
+                    'adx': round(adx_val, 2),
+                    'atr': round(atr_val, digits),
+                    'atr_mult': atr_mult,
+                    'ema_fast': round(ema_f, digits),
+                    'ema_slow': round(ema_s, digits),
+                    'timestamp': bar_time,
+                    'confluence_score': entry_score,
+                    'params': f"ICT EMA{fast}/{slow} ADX>{adx_th} ATR×{atr_mult} Score:{entry_score}",
+                }
+                # Mark OB as mitigated
+                bull_obs.pop(z_idx)
+                break
+
+    # ── BEARISH ENTRY ──
+    if bearish_trend and signal_result is None:
+        for z_idx, z in enumerate(bear_obs):
+            if (i - z['bar']) < 1:
+                continue
+            touched = highs[i] >= z['lo'] and closes[i] <= z['hi']
+            bear_candle = closes[i] < opens[i]
+            if not (touched and bear_candle):
+                continue
+
+            entry_score = z['score']
+            if in_session_kill_zone(hour):
+                entry_score += 1
+            if closes[i] > range_mid:  # Premium zone
+                entry_score += 1
+            upper_wick = highs[i] - max(opens[i], closes[i])
+            if body_i > 0 and upper_wick > body_i * 0.3:
+                entry_score += 1  # Rejection wick
+
+            if entry_score >= MIN_CONFLUENCE:
+                entry = bid
+                stop = entry + (atr_mult * atr_val)
+                tp = entry - (atr_mult * atr_val * TP_RR_RATIO)
+                signal_result = {
+                    'symbol': symbol,
+                    'broker_symbol': sym_info['broker_symbol'],
+                    'direction': 'SELL',
+                    'entry': round(entry, digits),
+                    'stop': round(stop, digits),
+                    'tp': round(tp, digits),
+                    'bid': bid, 'ask': ask,
+                    'spread': spread_points,
+                    'adx': round(adx_val, 2),
+                    'atr': round(atr_val, digits),
+                    'atr_mult': atr_mult,
+                    'ema_fast': round(ema_f, digits),
+                    'ema_slow': round(ema_s, digits),
+                    'timestamp': bar_time,
+                    'confluence_score': entry_score,
+                    'params': f"ICT EMA{fast}/{slow} ADX>{adx_th} ATR×{atr_mult} Score:{entry_score}",
+                }
+                bear_obs.pop(z_idx)
+                break
+
+    return signal_result
 
 
-# ============================================================================
-# RUNTIME CONFIG
-# ============================================================================
+# runtime config
 
 def load_config() -> dict:
     """Load runtime config from file."""
@@ -774,8 +1129,6 @@ def load_config() -> dict:
             pass
     cfg['risk_percent'] = max(0.01, min(100.0, float(cfg.get('risk_percent', DEFAULT_RISK))))
     cfg['enabled_symbols'] = [s for s in cfg.get('enabled_symbols', SYMBOLS) if s in SYMBOLS]
-    if not cfg['enabled_symbols']:
-        cfg['enabled_symbols'] = SYMBOLS.copy()
     return cfg
 
 
@@ -787,9 +1140,7 @@ def save_config(cfg: dict):
         pass
 
 
-# ============================================================================
-# TELEGRAM
-# ============================================================================
+# telegram
 
 class TelegramBot:
     def __init__(self):
@@ -876,8 +1227,8 @@ class TelegramBot:
                                 spread = sym_info['spread']
                                 direction = 'BUY' if ema_f > ema_s else ('SELL' if ema_f < ema_s else 'FLAT')
                                 reason = []
-                                if not (SESSION_START <= hour <= SESSION_END):
-                                    reason.append(f"Session closed ({hour} UTC)")
+                                if not in_session_kill_zone(hour):
+                                    reason.append(f"Outside kill zone ({hour} UTC)")
                                 if not np.isfinite(adx) or adx <= adx_th:
                                     reason.append(f"ADX {adx:.1f} ≤ {adx_th}")
                                 if direction == 'FLAT':
@@ -893,7 +1244,7 @@ class TelegramBot:
                                     f"ADX: {adx:.1f}  | ATR: {atr:.5f}",
                                     f"Bid/Ask: {bid} / {ask}  | Spread: {spread} pts",
                                     f"Direction: {direction}",
-                                    f"Session OK: {'YES' if (SESSION_START <= hour <= SESSION_END) else 'NO'}",
+                                    f"Session OK: {'YES' if in_session_kill_zone(hour) else 'NO'}",
                                     f"Would Signal Now: {would}",
                                     f"Reason: {because}"
                                 ]
@@ -925,8 +1276,8 @@ class TelegramBot:
                                 adx = float(df_i['ADX'].iat[i])
                                 hour = int(df_i['Time'].iat[i].hour)
                                 reason = None
-                                if not (SESSION_START <= hour <= SESSION_END):
-                                    reason = f"session closed (UTC {hour})"
+                                if not in_session_kill_zone(hour):
+                                    reason = f"outside kill zone (UTC {hour})"
                                 elif not np.isfinite(adx) or adx <= adx_th:
                                     reason = f"adx {adx:.1f} ≤ {adx_th}"
                                 elif abs(ema_f - ema_s) < 1e-12:
@@ -1085,10 +1436,13 @@ class TelegramBot:
                     positions = get_open_positions()
                     pos_count = len(positions)
                     total_pl = sum(p.profit for p in positions)
+                    daily_pnl = get_daily_pnl()
+                    state_name = get_state().value
                     
                     status_msg = (
                         "📊 <b>Bot Status</b>\n"
                         "━━━━━━━━━━━━━━━━\n"
+                        f"🔄 State: {state_name}\n"
                         f"⚠️ Risk: {cfg['risk_percent']}% per trade\n"
                         f"✅ Active Symbols: {len(cfg['enabled_symbols'])}/{len(SYMBOLS)}\n"
                         f"   {enabled}\n"
@@ -1096,7 +1450,8 @@ class TelegramBot:
                         f"📈 Open Positions: {pos_count}\n"
                     )
                     if pos_count > 0:
-                        status_msg += f"💰 Total P/L: ${total_pl:.2f}"
+                        status_msg += f"💰 Open P/L: ${total_pl:.2f}\n"
+                    status_msg += f"📅 Daily P&amp;L: ${daily_pnl:.2f}"
                     send_telegram_message(status_msg)
                 
                 # /positions command
@@ -1194,9 +1549,7 @@ def send_signal_alert(signal: dict, risk: float, quiet: bool = False):
             print(f"[!] Telegram send failed")
 
 
-# ============================================================================
-# MAIN LOOP
-# ============================================================================
+# main loop
 
 def show_open_positions():
     """Display all open positions on startup."""
@@ -1317,18 +1670,72 @@ def process_single_symbol(symbol: str, enabled: set, risk: float) -> tuple:
         signal.setdefault('confidence', 0.6)
         signal.setdefault('ai_approved', True)
     
-    # If we have a position, AI manages it intelligently
+    # If we have a position → MANAGEMENT state
     if existing_pos:
+        set_state(BotState.MANAGEMENT)
         pl = existing_pos['profit']
         
-        # First check AI position manager
+        # ── BREAK-EVEN & TRAILING STOP (per documentation) ──────────
+        # Rule 1: At 1R profit → SL moves to entry price (break-even)
+        # Rule 2: At 50 % of target profit → SL moves to 25 % profit level
+        tracked = tracked_positions.get(symbol, {})
+        entry_price = tracked.get('entry_price') or existing_pos.get('open_price', 0)
+        original_sl = tracked.get('original_sl') or existing_pos.get('sl', 0)
+        original_tp = tracked.get('original_tp') or existing_pos.get('tp', 0)
+        current_sl = existing_pos.get('sl', original_sl)
+        be_stage = tracked.get('be_stage', 0)  # 0=none, 1=BE done, 2=trail done
+
+        if entry_price and original_sl and original_tp:
+            initial_risk = abs(entry_price - original_sl)
+            target_profit = abs(original_tp - entry_price)
+            current_price = sym_info['bid'] if existing_pos['direction'] == 'BUY' else sym_info['ask']
+            digits = sym_info.get('digits', 5)
+
+            if existing_pos['direction'] == 'BUY':
+                unrealized = current_price - entry_price
+            else:
+                unrealized = entry_price - current_price
+
+            # Stage 1: At 1R profit → break-even (SL = entry)
+            if be_stage < 1 and initial_risk > 0 and unrealized >= initial_risk:
+                new_sl = round(entry_price, digits)
+                if (existing_pos['direction'] == 'BUY' and new_sl > current_sl) or \
+                   (existing_pos['direction'] == 'SELL' and new_sl < current_sl):
+                    if modify_position_sl_tp(existing_pos, new_sl=new_sl):
+                        tracked_positions.setdefault(symbol, {})['be_stage'] = 1
+                        tracked_positions[symbol]['sl'] = new_sl
+                        log_event(f"{symbol}: Break-even SL moved to {new_sl}", "INFO")
+                        send_telegram_message(
+                            f"🛡️ <b>Break-Even</b>\n"
+                            f"{symbol}: SL → {new_sl} (entry price)\n"
+                            f"Unrealized: ${unrealized:.2f}"
+                        )
+                        be_stage = 1
+
+            # Stage 2: At 50 % of target → SL moves to 25 % profit level
+            if be_stage < 2 and target_profit > 0 and unrealized >= target_profit * 0.5:
+                if existing_pos['direction'] == 'BUY':
+                    new_sl = round(entry_price + target_profit * 0.25, digits)
+                else:
+                    new_sl = round(entry_price - target_profit * 0.25, digits)
+                if (existing_pos['direction'] == 'BUY' and new_sl > current_sl) or \
+                   (existing_pos['direction'] == 'SELL' and new_sl < current_sl):
+                    if modify_position_sl_tp(existing_pos, new_sl=new_sl):
+                        tracked_positions.setdefault(symbol, {})['be_stage'] = 2
+                        tracked_positions[symbol]['sl'] = new_sl
+                        log_event(f"{symbol}: Trailing SL moved to {new_sl} (25% profit)", "INFO")
+                        send_telegram_message(
+                            f"📈 <b>Trailing Stop</b>\n"
+                            f"{symbol}: SL → {new_sl} (25% profit lock)\n"
+                            f"Unrealized: ${unrealized:.2f}"
+                        )
+
+        # AI position manager (supplementary)
         try:
-            # Add current price info to position
             existing_pos['current_price'] = sym_info['bid'] if existing_pos['direction'] == 'BUY' else sym_info['ask']
             existing_pos['bid'] = sym_info['bid']
             existing_pos['ask'] = sym_info['ask']
             
-            # Get AI management decision
             decision = brain.manage_open_position(symbol, existing_pos, df)
             
             if decision and decision.action != 'hold':
@@ -1336,26 +1743,16 @@ def process_single_symbol(symbol: str, enabled: set, risk: float) -> tuple:
                     print(f"\n🧠 AI: {symbol} close_full - {decision.reason}")
                     if close_position(existing_pos):
                         return (symbol, f"{symbol}:AI_CLOSED", None)
-                elif decision.action == 'move_breakeven' and decision.new_sl:
-                    print(f"\n🧠 AI: {symbol} breakeven - {decision.reason}")
-                    if modify_position_sl_tp(existing_pos, new_sl=decision.new_sl):
-                        tracked_positions.setdefault(symbol, existing_pos)['sl'] = decision.new_sl
-                        send_telegram_message(
-                            f"🛡️ <b>AI: Breakeven SL</b>\n"
-                            f"{symbol}: {decision.reason}"
-                        )
-                elif decision.action == 'close_partial':
-                    print(f"\n🧠 AI: {symbol} partial close - {decision.reason} [not implemented]")
                 elif decision.action == 'trail_sl' and decision.new_sl:
-                    print(f"\n🧠 AI: {symbol} trail SL - {decision.reason}")
-                    if modify_position_sl_tp(existing_pos, new_sl=decision.new_sl):
-                        tracked_positions.setdefault(symbol, existing_pos)['sl'] = decision.new_sl
-                        send_telegram_message(
-                            f"📈 <b>AI: Trailing Stop</b>\n"
-                            f"{symbol}: {decision.reason}"
-                        )
-        except Exception as e:
-            # If AI fails, continue with normal logic
+                    # Only allow AI to tighten SL further, never loosen
+                    cur_sl = tracked_positions.get(symbol, {}).get('sl', existing_pos.get('sl', 0))
+                    if existing_pos['direction'] == 'BUY' and decision.new_sl > cur_sl:
+                        if modify_position_sl_tp(existing_pos, new_sl=decision.new_sl):
+                            tracked_positions.setdefault(symbol, {})['sl'] = decision.new_sl
+                    elif existing_pos['direction'] == 'SELL' and decision.new_sl < cur_sl:
+                        if modify_position_sl_tp(existing_pos, new_sl=decision.new_sl):
+                            tracked_positions.setdefault(symbol, {})['sl'] = decision.new_sl
+        except Exception:
             pass
         
         # Check traditional reversal signal (only close if in profit to avoid cutting losers)
@@ -1402,6 +1799,7 @@ def scan_markets(cfg: dict, verbose: bool = False):
         print("[!] MT5 connection lost during scan")
         if not reconnect_mt5():
             print("[!] Could not reconnect to MT5. Skipping this scan cycle.")
+            update_runtime_status(state='degraded', message='MT5 reconnect failed', enabled_symbols=cfg.get('enabled_symbols', []))
             return
     
     enabled = set(cfg.get('enabled_symbols', SYMBOLS))
@@ -1423,7 +1821,7 @@ def scan_markets(cfg: dict, verbose: bool = False):
                         exit_price = deal.price
                         profit = deal.profit
                         
-                        # Log closed trade
+                        # Log closed trade (CSV — legacy)
                         log_trade({
                             'timestamp': prev_pos['open_time'],
                             'symbol': symbol,
@@ -1438,6 +1836,18 @@ def scan_markets(cfg: dict, verbose: bool = False):
                             'exit_price': exit_price,
                             'profit': f"{profit:.2f}"
                         })
+                        
+                        # Log closed trade (SQLite database)
+                        try:
+                            close_trade(
+                                prev_pos.get('ticket', 0),
+                                close_price=exit_price,
+                                profit=profit,
+                                exit_reason='SL/TP',
+                            )
+                            log_event(f"Trade closed: {prev_pos['direction']} {symbol} profit=${profit:.2f}", "INFO")
+                        except Exception:
+                            pass
                         
                         # ADVANCED AI LEARNING - Learn from closed trades
                         try:
@@ -1523,6 +1933,41 @@ def scan_markets(cfg: dict, verbose: bool = False):
     
     # Execute any new signals (sequential for safety)
     for symbol, signal in signals_to_execute:
+        set_state(BotState.EXECUTION)
+
+        # ── SAFETY: Daily Drawdown Circuit Breaker (5 %) ────────────
+        # Doc: "ak denný drawdown presiahne 5 %, bot automaticky deaktivuje obchodovanie"
+        try:
+            account = mt5.account_info()
+            if account:
+                daily_pnl = get_daily_pnl()
+                if account.balance > 0 and abs(daily_pnl) / account.balance * 100 >= MAX_DAILY_DRAWDOWN and daily_pnl < 0:
+                    print(f"[!] CIRCUIT BREAKER: daily loss ${daily_pnl:.2f} exceeds {MAX_DAILY_DRAWDOWN}% — blocking new trades")
+                    log_event(f"Circuit breaker triggered: daily PnL ${daily_pnl:.2f}", "WARN")
+                    send_telegram_message(
+                        f"🚨 <b>Circuit Breaker</b>\n"
+                        f"Daily loss ${daily_pnl:.2f} exceeds {MAX_DAILY_DRAWDOWN}%\n"
+                        f"New trades blocked until tomorrow"
+                    )
+                    status.append(f"{symbol}:BLOCKED")
+                    continue
+        except Exception:
+            pass
+
+        # ── SAFETY: Margin Protection (20 %) ────────────────────────
+        # Doc: "ak je viac ako 20 % kapitálu viazaného v marži, nový príkaz sa zablokuje"
+        try:
+            account = mt5.account_info()
+            if account and account.balance > 0:
+                margin_used_pct = (account.balance - account.margin_free) / account.balance * 100
+                if margin_used_pct > MAX_MARGIN_USAGE:
+                    print(f"[!] MARGIN LIMIT: {margin_used_pct:.1f}% margin used > {MAX_MARGIN_USAGE}% — blocking new order")
+                    log_event(f"Margin protection: {margin_used_pct:.1f}% used", "WARN")
+                    status.append(f"{symbol}:MARGIN")
+                    continue
+        except Exception:
+            pass
+
         # NEW SIGNAL - this is important, print it
         sym_info = get_symbol_info(symbol)
         dir_char = '▲' if signal['direction'] == 'BUY' else '▼'
@@ -1579,14 +2024,33 @@ def scan_markets(cfg: dict, verbose: bool = False):
                     'ticket': pos.get('ticket'),
                     'direction': signal['direction'],
                     'entry_price': signal['entry'],
+                    'original_sl': signal['stop'],
+                    'original_tp': signal['tp'],
                     'sl': signal['stop'],
                     'tp': signal['tp'],
                     'lot_size': signal.get('lot_size', 0),
                     'open_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     'entry_regime': entry_regime,
                     'risk_percent': risk_used,
-                    'htf_bias': htf_bias
+                    'htf_bias': htf_bias,
+                    'be_stage': 0,  # 0=none, 1=BE done, 2=trail done
                 }
+                
+                # ── SQLite: record trade open ──
+                try:
+                    insert_trade(
+                        ticket=pos.get('ticket', 0),
+                        symbol=symbol,
+                        trade_type=signal['direction'],
+                        open_price=signal['entry'],
+                        sl=signal['stop'],
+                        tp=signal['tp'],
+                        lot_size=signal.get('lot_size', 0),
+                        risk_percent=risk_used,
+                    )
+                    log_event(f"Trade opened: {signal['direction']} {symbol} @ {signal['entry']}", "INFO")
+                except Exception:
+                    pass
                 
                 # Notify AI brain of trade open
                 try:
@@ -1607,6 +2071,19 @@ def scan_markets(cfg: dict, verbose: bool = False):
     ts = datetime.now().strftime('%H:%M:%S')
     print(f"[{ts}] {' | '.join(sorted_status)}")
 
+    opened_count = sum(1 for s in status if s.endswith(':OPENED'))
+    fail_count = sum(1 for s in status if s.endswith(':FAIL'))
+    update_runtime_status(
+        state='running',
+        message='Scan cycle completed',
+        enabled_symbols=sorted(enabled),
+        open_positions=len(get_open_positions()),
+        signals_detected=len(signals_to_execute),
+        positions_opened=opened_count,
+        failed_orders=fail_count,
+        status_line=' | '.join(sorted_status),
+    )
+
 
 def main():
     parser = argparse.ArgumentParser(description="LIVE Trading Bot")
@@ -1615,16 +2092,22 @@ def main():
     args = parser.parse_args()
 
     print("=" * 60)
-    print("  LIVE TRADING BOT - MT5 Market Scanner")
+    print("  ULTIMA TRADING BOT — ICT / SMC Engine")
     print("=" * 60)
+
+    # Initialize SQLite database (trades, order_blocks, logs)
+    init_trading_db()
+    log_event("Bot process starting", "INFO")
 
     # Initialize MT5
     if not init_mt5():
         print("[!] Cannot start without MT5 connection")
+        update_runtime_status(state='error', message='Cannot start without MT5 connection')
         return
     
     print(f"[✓] MT5 connected: {mt5.terminal_info().name}")
     print(f"[✓] Account: {mt5.account_info().login}")
+    update_runtime_status(state='starting', message='Bot process initialized')
     
     # Load config
     cfg = load_config()
@@ -1664,6 +2147,7 @@ def main():
 
     try:
         if args.once:
+            cfg = load_config()
             scan_markets(cfg)
         else:
             interval = max(2, args.loop)
@@ -1739,17 +2223,24 @@ def main():
             # Market scanning loop
             while True:
                 start = time.time()
-                scan_markets(cfg)
+                try:
+                    cfg = load_config()
+                    scan_markets(cfg)
+                except Exception as e:
+                    print(f"[!] Scan loop error: {e}")
+                    update_runtime_status(state='error', message=f"Scan loop error: {e}")
                 elapsed = time.time() - start
                 time.sleep(max(1, interval - elapsed))
     except KeyboardInterrupt:
         print("\n[!] Stopped by user")
+        update_runtime_status(state='stopped', message='Stopped by user')
         if not args.once:
             telegram_active.clear()
             optimizer_active.clear()
             brain_active.clear()
     finally:
         shutdown_mt5()
+        update_runtime_status(state='stopped', message='MT5 disconnected')
         print("[✓] MT5 disconnected")
 
 

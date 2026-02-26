@@ -3,312 +3,477 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EURUSD Trading Bot - Automated Forex Trading</title>
-    <link rel="stylesheet" href="css/style.css">
+    <title>Zenith — Algorithmic Trading Intelligence</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260225-2">
+    <link rel="shortcut icon" href="/favicon.svg?v=20260225-2">
+    <link rel="apple-touch-icon" href="/favicon.svg?v=20260225-2">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="css/style.css?v=20260226-3">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <!-- Navigation -->
-    <nav class="navbar">
+    <div class="site-reactive-grid"></div>
+    <canvas id="particleCanvas"></canvas>
+
+    <!-- nav -->
+    <nav class="navbar" id="navbar">
         <div class="container">
-            <div class="nav-brand">
-                <i class="fas fa-chart-line"></i>
-                <span>EURUSD Trading Bot</span>
+            <a href="#" class="nav-brand">
+                <div class="brand-icon">
+                    <svg viewBox="0 0 40 40" fill="none">
+                        <path d="M20 4L36 12V28L20 36L4 28V12L20 4Z" stroke="url(#brandGrad)" stroke-width="2" fill="none"/>
+                        <path d="M20 10L30 16V26L20 32L10 26V16L20 10Z" fill="url(#brandGrad)" opacity="0.15"/>
+                        <path d="M12 20L18 14L24 22L32 12" stroke="url(#brandGrad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <defs><linearGradient id="brandGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#00ff87"/><stop offset="100%" stop-color="#60efff"/></linearGradient></defs>
+                    </svg>
+                </div>
+                <span class="brand-text">Zenith</span>
+            </a>
+            <div class="nav-links" id="navLinks">
+                <a href="#home" class="nav-link active"><i class="fas fa-house"></i> Home</a>
+                <a href="#features" class="nav-link">How It Works</a>
+                <a href="#strategy" class="nav-link">Strategy</a>
+                <a href="#performance" class="nav-link">Performance</a>
+                <a href="docs.html" class="nav-link">Docs</a>
+                <a href="about.html" class="nav-link">About</a>
+                <a href="login.html" class="nav-link nav-link-border">Login / Register</a>
             </div>
-            <ul class="nav-menu">
-                <li><a href="#home" class="active">Home</a></li>
-                <li><a href="#features">Features</a></li>
-                <li><a href="#strategy">Strategy</a></li>
-                <li><a href="#performance">Performance</a></li>
-                <li><a href="dashboard.html">Dashboard</a></li>
-                <li><a href="docs.html">Docs</a></li>
-            </ul>
-            <a href="dashboard.html" class="btn btn-primary">Launch Dashboard</a>
+            <div class="nav-actions" id="navActions">
+                <a href="#" class="nav-btn nav-btn-ghost"><i class="fas fa-globe"></i> English <i class="fas fa-chevron-down" style="font-size:0.6em;opacity:0.6"></i></a>
+                <a href="dashboard.html" class="nav-btn nav-btn-primary">Launch Dashboard <i class="fas fa-arrow-right"></i></a>
+                <a href="signup.html" class="nav-btn nav-btn-outline">Get Started</a>
+            </div>
+            <button class="mobile-toggle" id="mobileToggle"><span></span><span></span><span></span></button>
         </div>
     </nav>
 
-    <!-- Hero Section -->
+    <!-- hero -->
     <section id="home" class="hero">
-        <div class="hero-background">
-            <div class="chart-lines"></div>
+        <div class="hero-spotlight"></div>
+        <div class="hero-reactive-grid"></div>
+        <!-- floating background glyphs — FX pairs & trading data -->
+        <div class="bg-glyphs">
+            <span class="bg-glyph" style="top:18%;left:22%;--rot:-5deg;--sz:2.1rem;--blur:2px;--op:0.05;--react:0.38">EUR/USD</span>
+            <span class="bg-glyph" style="top:29%;left:28%;--rot:4deg;--sz:1.45rem;--blur:0px;--op:0.08;--react:0.24">USD/JPY</span>
+            <span class="bg-glyph" style="top:50%;left:24%;--rot:-6deg;--sz:1.55rem;--blur:0px;--op:0.08;--react:0.3">GBP/JPY</span>
+            <span class="bg-glyph glyph-box" style="top:63%;left:30%;--rot:0deg;--sz:2.2rem;--blur:0px;--op:0.1;--react:0.18">1.0845</span>
+            <span class="bg-glyph" style="top:20%;right:24%;--rot:5deg;--sz:1.25rem;--blur:1px;--op:0.06;--react:0.32">XAU/USD</span>
+            <span class="bg-glyph glyph-box" style="top:14%;right:29%;--rot:2deg;--sz:2.2rem;--blur:0px;--op:0.1;--react:0.2">152.34</span>
+            <span class="bg-glyph" style="top:35%;right:20%;--rot:-4deg;--sz:2.1rem;--blur:2px;--op:0.06;--react:0.34">BTC/USD</span>
+            <span class="bg-glyph" style="top:50%;right:25%;--rot:7deg;--sz:1.2rem;--blur:0px;--op:0.06;--react:0.26">US30</span>
+            <span class="bg-glyph" style="top:68%;right:22%;--rot:-3deg;--sz:1.8rem;--blur:0px;--op:0.06;--react:0.3">AUD/USD</span>
+            <span class="bg-glyph" style="top:74%;right:30%;--rot:0deg;--sz:1.3rem;--blur:0px;--op:0.05;--react:0.22">USD/CHF</span>
+            <span class="bg-glyph" style="top:76%;left:34%;--rot:4deg;--sz:1.1rem;--blur:0px;--op:0.05;--react:0.2">NAS100</span>
+            <span class="bg-glyph" style="top:42%;left:33%;--rot:-2deg;--sz:1rem;--blur:1px;--op:0.05;--react:0.24">+2.4%</span>
+            <span class="bg-glyph" style="top:16%;left:36%;--rot:-8deg;--sz:1.8rem;--blur:3px;--op:0.05;--react:0.36">EUR/GBP</span>
+            <span class="bg-glyph" style="top:10%;left:8%;--rot:-2deg;--sz:1.15rem;--blur:0px;--op:0.05;--react:0.34">BUY</span>
+            <span class="bg-glyph" style="top:86%;left:11%;--rot:3deg;--sz:1.1rem;--blur:0px;--op:0.05;--react:0.34">SELL</span>
+            <span class="bg-glyph" style="top:82%;left:46%;--rot:-1deg;--sz:1.25rem;--blur:0px;--op:0.05;--react:0.3">TP HIT</span>
+            <span class="bg-glyph" style="top:9%;left:57%;--rot:4deg;--sz:1.05rem;--blur:0px;--op:0.05;--react:0.32">SL -12p</span>
+            <span class="bg-glyph" style="top:38%;left:8%;--rot:1deg;--sz:1.2rem;--blur:0px;--op:0.05;--react:0.28">USD/CAD</span>
+            <span class="bg-glyph" style="top:57%;left:76%;--rot:-4deg;--sz:1.18rem;--blur:0px;--op:0.05;--react:0.28">EUR/AUD</span>
+            <span class="bg-glyph" style="top:31%;left:88%;--rot:2deg;--sz:1.05rem;--blur:0px;--op:0.05;--react:0.3">0.62 PF</span>
+            <span class="bg-glyph" style="top:70%;left:62%;--rot:-2deg;--sz:1.1rem;--blur:0px;--op:0.05;--react:0.3">+1.24%</span>
         </div>
-        <div class="container">
-            <div class="hero-content">
-                <div class="hero-badge">
-                    <i class="fas fa-robot"></i>
-                    <span>Automated Forex Trading</span>
+        <div class="container hero-container">
+            <div class="hero-left">
+                <div class="hero-eyebrow reveal-up">
+                    <span>ICT / Smart Money <i class="fas fa-star"></i> Automated</span>
                 </div>
-                <h1 class="hero-title">
-                    Intelligent<br>
-                    <span class="gradient-text">EURUSD Trading Bot</span>
+                <h1 class="hero-title reveal-up" data-delay="100">
+                    Algorithmic Trading<br><span class="title-gradient">Powered by ICT/SMC</span>
                 </h1>
-                <p class="hero-description">
-                    Automated trend-following trading on EURUSD M15 with EMA crossover + RSI confluence. Real-time backtesting, grid search optimization, and professional risk management.
-                </p>
-                <div class="hero-buttons">
-                    <a href="dashboard.html" class="btn btn-primary btn-lg">
-                        Open Dashboard
-                        <i class="fas fa-arrow-right"></i>
+
+                <div class="hero-points reveal-up" data-delay="250">
+                    <span><i class="fas fa-brain"></i> ICT/SMC Strategy Engine</span>
+                    <span><i class="fas fa-bolt"></i> Real-time MT5 Execution</span>
+                    <span><i class="fas fa-chart-line"></i> 7 Symbols Backtested</span>
+                    <span><i class="fas fa-shield-halved"></i> Break-even Trailing</span>
+                </div>
+
+                <div class="hero-cta reveal-up" data-delay="300">
+                    <a href="dashboard.html" class="btn-glow"><span class="btn-glow-text">Launch Dashboard</span><span class="btn-glow-icon"><i class="fas fa-arrow-right"></i></span></a>
+                    <a href="docs.html" class="btn-outline-hero">Read Docs</a>
+                </div>
+            </div>
+            <!-- hero right: stacked gradient text -->
+            <div class="hero-right">
+                <div class="hero-right-line">Start Trading</div>
+                <div class="hero-right-line">Start Trading</div>
+                <div class="hero-right-line">Start Trading</div>
+                <div class="hero-right-line">Start Trading</div>
+                <div class="hero-right-line">Start Trading</div>
+                <div class="hero-right-line">Start Trading</div>
+                <div class="hero-right-line">Start Trading</div>
+            </div>
+        </div>
+
+        <!-- bottom hero bar -->
+        <div class="hero-bottom-bar">
+            <div class="hero-follow">
+                <span>Follow Us</span>
+                <div class="hero-socials">
+                    <a href="#"><i class="fab fa-discord"></i></a>
+                    <a href="#"><i class="fab fa-instagram"></i></a>
+                    <a href="#"><i class="fab fa-facebook"></i></a>
+                    <a href="#"><i class="fab fa-x-twitter"></i></a>
+                    <a href="#"><i class="fab fa-tiktok"></i></a>
+                    <a href="#"><i class="fab fa-telegram"></i></a>
+                </div>
+            </div>
+            <div class="hero-scroll-cue">
+                <span>Scroll</span> to explore <i class="fas fa-arrow-down"></i>
+            </div>
+        </div>
+    </section>
+
+    <!-- marquee -->
+    <section class="marquee-section">
+        <div class="marquee-track">
+            <span class="marquee-word">for major pairs and multi-asset coverage</span>
+            <span class="marquee-dot">✦</span>
+            <span class="marquee-word">for major pairs and multi-asset coverage</span>
+            <span class="marquee-dot">✦</span>
+            <span class="marquee-word">for major pairs and multi-asset coverage</span>
+            <span class="marquee-dot">✦</span>
+            <span class="marquee-word">for major pairs and multi-asset coverage</span>
+            <span class="marquee-dot">✦</span>
+        </div>
+    </section>
+
+    <!-- trust strip -->
+    <section class="trust-strip">
+        <div class="container">
+            <div class="trust-items">
+                <div class="trust-item reveal-up">
+                    <div class="trust-icon"><i class="fas fa-code-branch"></i></div>
+                    <div class="trust-text"><strong>Open Source</strong><span>Fully transparent code</span></div>
+                </div>
+                <div class="trust-divider"></div>
+                <div class="trust-item reveal-up" data-delay="100">
+                    <div class="trust-icon"><i class="fas fa-server"></i></div>
+                    <div class="trust-text"><strong>MetaTrader 5</strong><span>Direct broker connection</span></div>
+                </div>
+                <div class="trust-divider"></div>
+                <div class="trust-item reveal-up" data-delay="200">
+                    <div class="trust-icon"><i class="fas fa-lock"></i></div>
+                    <div class="trust-text"><strong>Self-Hosted</strong><span>Your data stays yours</span></div>
+                </div>
+                <div class="trust-divider"></div>
+                <div class="trust-item reveal-up" data-delay="300">
+                    <div class="trust-icon"><i class="fas fa-flask-vial"></i></div>
+                    <div class="trust-text"><strong>Multiple Test Modes</strong><span>Rigorous validation</span></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- features -->
+    <section id="features" class="features-section">
+        <div class="section-glow"></div>
+        <div class="bg-glyphs section-glyphs">
+            <span class="bg-glyph" style="top:12%;left:8%;--rot:-4deg;--sz:1.1rem;--blur:0px;--op:0.05;--fd:9s;--fi:0">MT5</span>
+            <span class="bg-glyph" style="top:28%;left:14%;--rot:3deg;--sz:1.4rem;--blur:1px;--op:0.04;--fd:11s;--fi:1">API</span>
+            <span class="bg-glyph" style="top:55%;left:6%;--rot:-6deg;--sz:1.2rem;--blur:0px;--op:0.05;--fd:8s;--fi:2">&lt;/&gt;</span>
+            <span class="bg-glyph" style="top:75%;left:18%;--rot:2deg;--sz:1rem;--blur:0px;--op:0.04;--fd:10s;--fi:3">{ }</span>
+            <span class="bg-glyph" style="top:18%;right:10%;--rot:5deg;--sz:1.3rem;--blur:0px;--op:0.05;--fd:9s;--fi:4">M15</span>
+            <span class="bg-glyph" style="top:42%;right:7%;--rot:-3deg;--sz:1.1rem;--blur:1px;--op:0.04;--fd:12s;--fi:5">OB</span>
+            <span class="bg-glyph" style="top:65%;right:15%;--rot:4deg;--sz:1.25rem;--blur:0px;--op:0.05;--fd:8s;--fi:6">ATR</span>
+            <span class="bg-glyph" style="top:85%;right:22%;--rot:-2deg;--sz:0.95rem;--blur:0px;--op:0.04;--fd:10s;--fi:7">signal()</span>
+            <span class="bg-glyph" style="top:8%;left:42%;--rot:1deg;--sz:1rem;--blur:0px;--op:0.04;--fd:11s;--fi:8">FVG</span>
+            <span class="bg-glyph" style="top:90%;left:38%;--rot:-5deg;--sz:1.15rem;--blur:0px;--op:0.04;--fd:9s;--fi:9">7/7</span>
+        </div>
+        <div class="container">
+            <div class="section-header reveal-up">
+                <div class="section-tag">What is Zenith?</div>
+                <h2 class="section-title">Automate your trading<br>with institutional-grade<br><span class="title-gradient">Smart Money logic</span></h2>
+                <p class="section-desc">Zenith uses ICT/SMC concepts — Break of Structure, Order Blocks, Fair Value Gaps, and liquidity sweeps — to find high-probability entries across Forex, Metals, Crypto, and Indices.</p>
+            </div>
+            <div class="features-bento">
+                <div class="bento-item bento-lg glass-card reveal-up" data-tilt>
+                    <div class="feature-card-glow"></div>
+                    <div class="bento-content">
+                        <div class="feature-icon-wrap"><div class="feature-icon"><i class="fas fa-chart-line"></i></div></div>
+                        <h3>Adaptive Signal Engine</h3>
+                        <p>Multi-factor signal stack with trend, momentum, and volatility filters that can be tuned per market.</p>
+                        <div class="feature-tags"><span class="ftag">Trend + Volatility</span><span class="ftag">Regime Filters</span><span class="ftag">Risk Controls</span></div>
+                    </div>
+                    <div class="bento-visual">
+                        <div class="mini-chart">
+                            <svg viewBox="0 0 200 80" preserveAspectRatio="none">
+                                <defs><linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#00ff87" stop-opacity="0.3"/><stop offset="100%" stop-color="#00ff87" stop-opacity="0"/></linearGradient></defs>
+                                <path d="M0,60 Q20,55 40,40 T80,35 T120,50 T160,20 T200,30" fill="none" stroke="#00ff87" stroke-width="2" class="svg-animate-line"/>
+                                <path d="M0,60 Q20,55 40,40 T80,35 T120,50 T160,20 T200,30 V80 H0 Z" fill="url(#chartFill)" class="svg-animate-fill"/>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-item glass-card reveal-up" data-delay="100" data-tilt><div class="feature-card-glow"></div><div class="feature-icon-wrap"><div class="feature-icon"><i class="fas fa-forward"></i></div></div><h3>Walk-Forward</h3><p>Rolling windows validate robustness across changing market regimes.</p><div class="feature-tags"><span class="ftag">Rolling OOS</span><span class="ftag">Anti-Overfit</span></div></div>
+                <div class="bento-item glass-card reveal-up" data-delay="200" data-tilt><div class="feature-card-glow"></div><div class="feature-icon-wrap"><div class="feature-icon"><i class="fas fa-dice"></i></div></div><h3>Monte Carlo</h3><p>Randomized reordering and stress testing to gauge stability.</p><div class="feature-tags"><span class="ftag">Stress Tests</span><span class="ftag">Confidence</span></div></div>
+                <div class="bento-item glass-card reveal-up" data-delay="300" data-tilt><div class="feature-card-glow"></div><div class="feature-icon-wrap"><div class="feature-icon"><i class="fas fa-layer-group"></i></div></div><h3>Multi-Asset Suite</h3><p>Designed for FX, metals, crypto, and index markets.</p><div class="feature-tags"><span class="ftag">Forex</span><span class="ftag">Metals</span><span class="ftag">Crypto</span><span class="ftag">Indices</span></div></div>
+                <div class="bento-item glass-card reveal-up" data-delay="400" data-tilt><div class="feature-card-glow"></div><div class="feature-icon-wrap"><div class="feature-icon"><i class="fas fa-shield-halved"></i></div></div><h3>Risk Management</h3><p>Adaptive risk controls, dynamic stops, and drawdown protection.</p><div class="feature-tags"><span class="ftag">Dynamic Stops</span><span class="ftag">Risk Caps</span><span class="ftag">DD Protection</span></div></div>
+                <div class="bento-item glass-card reveal-up" data-delay="500" data-tilt><div class="feature-card-glow"></div><div class="feature-icon-wrap"><div class="feature-icon"><i class="fas fa-plug"></i></div></div><h3>MT5 Integration</h3><p>Connect MetaTrader 5 for real-time data feeds and live execution.</p><div class="feature-tags"><span class="ftag">MetaTrader 5</span><span class="ftag">Live Data</span></div></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- stats -->
+    <section class="stats-section">
+        <div class="stats-grid-bg"></div>
+        <div class="bg-glyphs section-glyphs">
+            <span class="bg-glyph" style="top:15%;left:6%;--rot:-3deg;--sz:1.5rem;--blur:0px;--op:0.05;--fd:10s;--fi:0">$</span>
+            <span class="bg-glyph" style="top:35%;left:12%;--rot:5deg;--sz:1.1rem;--blur:1px;--op:0.04;--fd:9s;--fi:1">+7,131%</span>
+            <span class="bg-glyph" style="top:60%;left:8%;--rot:-2deg;--sz:1.7rem;--blur:0px;--op:0.05;--fd:11s;--fi:2">$$$</span>
+            <span class="bg-glyph" style="top:80%;left:16%;--rot:3deg;--sz:1rem;--blur:0px;--op:0.04;--fd:8s;--fi:3">44.8%</span>
+            <span class="bg-glyph" style="top:20%;right:8%;--rot:4deg;--sz:1.2rem;--blur:0px;--op:0.05;--fd:10s;--fi:4">€</span>
+            <span class="bg-glyph" style="top:45%;right:6%;--rot:-5deg;--sz:1rem;--blur:0px;--op:0.04;--fd:12s;--fi:5">PF 1.87</span>
+            <span class="bg-glyph" style="top:70%;right:14%;--rot:2deg;--sz:1.4rem;--blur:1px;--op:0.05;--fd:9s;--fi:6">¥</span>
+            <span class="bg-glyph" style="top:88%;right:20%;--rot:-4deg;--sz:1.1rem;--blur:0px;--op:0.04;--fd:11s;--fi:7">1,277</span>
+            <span class="bg-glyph" style="top:10%;left:52%;--rot:1deg;--sz:1.3rem;--blur:0px;--op:0.04;--fd:8s;--fi:8">↑</span>
+            <span class="bg-glyph" style="top:85%;left:44%;--rot:-1deg;--sz:1.5rem;--blur:0px;--op:0.04;--fd:10s;--fi:9">£</span>
+        </div>
+        <div class="container">
+            <div class="section-header reveal-up">
+                <h2 class="section-title stats-title">Verified performance<br><span class="title-gradient">across 7 markets</span><br>with walk-forward validation</h2>
+                <p class="section-desc">Every signal is backtested on real MT5 data with split-sample and walk-forward analysis to ensure robustness — not curve-fitting.</p>
+            </div>
+            <div class="stats-row">
+                <div class="stat-big reveal-up" data-delay="100">
+                    <div class="stat-big-value">7</div>
+                    <div class="stat-big-label">Markets Traded</div>
+                </div>
+                <div class="stat-big-divider"></div>
+                <div class="stat-big reveal-up" data-delay="200">
+                    <div class="stat-big-value">ICT/SMC</div>
+                    <div class="stat-big-label">Strategy Engine</div>
+                </div>
+                <div class="stat-big-divider"></div>
+                <div class="stat-big reveal-up" data-delay="300">
+                    <div class="stat-big-value">M15</div>
+                    <div class="stat-big-label">Timeframe</div>
+                </div>
+            </div>
+        </div>
+        <!-- glow -->
+        <div class="horizon-glow"></div>
+    </section>
+
+    <!-- strategy -->
+    <section id="strategy" class="strategy-section">
+        <div class="bg-glyphs section-glyphs">
+            <span class="bg-glyph" style="top:10%;left:7%;--rot:-4deg;--sz:1.3rem;--blur:0px;--op:0.05;--fd:9s;--fi:0">BOS</span>
+            <span class="bg-glyph" style="top:30%;left:10%;--rot:3deg;--sz:1.1rem;--blur:1px;--op:0.04;--fd:11s;--fi:1">OB</span>
+            <span class="bg-glyph" style="top:55%;left:5%;--rot:-5deg;--sz:1.2rem;--blur:0px;--op:0.05;--fd:8s;--fi:2">FVG</span>
+            <span class="bg-glyph" style="top:78%;left:12%;--rot:2deg;--sz:1rem;--blur:0px;--op:0.04;--fd:10s;--fi:3">sweep</span>
+            <span class="bg-glyph" style="top:15%;right:8%;--rot:5deg;--sz:1.5rem;--blur:0px;--op:0.05;--fd:10s;--fi:4">$</span>
+            <span class="bg-glyph" style="top:40%;right:6%;--rot:-3deg;--sz:1rem;--blur:0px;--op:0.04;--fd:9s;--fi:5">premium</span>
+            <span class="bg-glyph" style="top:62%;right:12%;--rot:4deg;--sz:1.1rem;--blur:1px;--op:0.05;--fd:12s;--fi:6">London</span>
+            <span class="bg-glyph" style="top:85%;right:18%;--rot:-2deg;--sz:1.2rem;--blur:0px;--op:0.04;--fd:8s;--fi:7">R:R</span>
+            <span class="bg-glyph" style="top:5%;left:40%;--rot:1deg;--sz:0.95rem;--blur:0px;--op:0.04;--fd:11s;--fi:8">kill zone</span>
+            <span class="bg-glyph" style="top:92%;left:35%;--rot:-3deg;--sz:1.15rem;--blur:0px;--op:0.04;--fd:9s;--fi:9">NY</span>
+        </div>
+        <div class="container">
+            <div class="section-header reveal-up">
+                <div class="section-tag">Strategy</div>
+                <h2 class="section-title">How Zenith<br><span class="title-gradient">Makes Decisions</span></h2>
+                <p class="section-desc">A systematic approach — no emotions, no guesswork.</p>
+            </div>
+            <div class="strategy-timeline">
+                <div class="timeline-line"></div>
+                <div class="timeline-step reveal-left">
+                    <div class="timeline-dot"><span>1</span></div>
+                    <div class="timeline-card glass-card"><h3>Break of Structure</h3><p>Detects swing high/low breaks with displacement candles to confirm institutional order flow.</p><div class="timeline-values"><div class="tv"><span class="tv-label">Swing</span><span class="tv-value">5-bar</span></div><div class="tv"><span class="tv-label">BOS</span><span class="tv-value">Displacement</span></div><div class="tv"><span class="tv-label">ADX</span><span class="tv-value">≥ 25</span></div></div></div>
+                </div>
+                <div class="timeline-step reveal-right">
+                    <div class="timeline-dot"><span>2</span></div>
+                    <div class="timeline-card glass-card"><h3>Order Block Zone</h3><p>Identifies the last strong opposite candle before the impulse — where smart money left unfilled orders.</p><div class="timeline-values"><div class="tv"><span class="tv-label">Zone</span><span class="tv-value">OB Body</span></div><div class="tv"><span class="tv-label">Valid</span><span class="tv-value">50 bars</span></div></div></div>
+                </div>
+                <div class="timeline-step reveal-left">
+                    <div class="timeline-dot"><span>3</span></div>
+                    <div class="timeline-card glass-card"><h3>Confluence Scoring</h3><p>Entry score built from FVG, displacement, liquidity sweep, session kill zone, premium/discount, and rejection wick.</p><div class="timeline-values"><div class="tv"><span class="tv-label">Min Score</span><span class="tv-value">3 / 7</span></div><div class="tv"><span class="tv-label">Sessions</span><span class="tv-value">London + NY</span></div></div></div>
+                </div>
+                <div class="timeline-step reveal-right">
+                    <div class="timeline-dot"><span>4</span></div>
+                    <div class="timeline-card glass-card"><h3>Risk Management</h3><p>ATR-based stop loss, 2R take profit, break-even at 1R (SL → entry), trailing at 50% target (SL → 25% profit), and 2% risk per trade.</p><div class="timeline-values"><div class="tv"><span class="tv-label">SL</span><span class="tv-value">ATR × 1.0</span></div><div class="tv"><span class="tv-label">TP</span><span class="tv-value">2R</span></div><div class="tv"><span class="tv-label">BE</span><span class="tv-value">1R</span></div></div></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- cascade -->
+    <section class="cascade-section">
+        <div class="bg-glyphs section-glyphs">
+            <span class="bg-glyph" style="top:20%;left:8%;--rot:-3deg;--sz:1.4rem;--blur:0px;--op:0.04;--fd:10s;--fi:0">$</span>
+            <span class="bg-glyph" style="top:50%;left:5%;--rot:4deg;--sz:1.1rem;--blur:1px;--op:0.04;--fd:9s;--fi:1">algo</span>
+            <span class="bg-glyph" style="top:75%;left:12%;--rot:-5deg;--sz:1.2rem;--blur:0px;--op:0.04;--fd:11s;--fi:2">auto</span>
+            <span class="bg-glyph" style="top:25%;right:7%;--rot:3deg;--sz:1.5rem;--blur:0px;--op:0.04;--fd:8s;--fi:3">$$</span>
+            <span class="bg-glyph" style="top:60%;right:10%;--rot:-2deg;--sz:1rem;--blur:0px;--op:0.04;--fd:12s;--fi:4">&gt;&gt;</span>
+            <span class="bg-glyph" style="top:80%;right:18%;--rot:5deg;--sz:1.15rem;--blur:1px;--op:0.04;--fd:10s;--fi:5">execute</span>
+        </div>
+        <div class="cascade-left reveal-up">
+            <p class="cascade-subtitle">Stop guessing with your trades,<br>let the algorithm do the work.</p>
+            <div class="cascade-buttons">
+                <a href="dashboard.html" class="btn-glow"><span class="btn-glow-text">Open Dashboard</span><span class="btn-glow-icon"><i class="fas fa-arrow-right"></i></span></a>
+                <a href="docs.html" class="btn-outline-hero">Documentation</a>
+            </div>
+        </div>
+        <div class="cascade-right">
+            <div class="cascade-words">
+                <span class="cascade-word">Start trading</span>
+                <span class="cascade-word">Start trading</span>
+                <span class="cascade-word">Start trading</span>
+                <span class="cascade-word">Start trading</span>
+                <span class="cascade-word">Start trading</span>
+                <span class="cascade-word">Start trading</span>
+                <span class="cascade-word">Start trading</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- performance -->
+    <section id="performance" class="performance-section">
+        <div class="bg-glyphs section-glyphs">
+            <span class="bg-glyph" style="top:12%;left:6%;--rot:-3deg;--sz:1.2rem;--blur:0px;--op:0.05;--fd:10s;--fi:0">✓</span>
+            <span class="bg-glyph" style="top:35%;left:10%;--rot:4deg;--sz:1rem;--blur:1px;--op:0.04;--fd:9s;--fi:1">ROBUST</span>
+            <span class="bg-glyph" style="top:60%;left:8%;--rot:-5deg;--sz:1.4rem;--blur:0px;--op:0.05;--fd:11s;--fi:2">$</span>
+            <span class="bg-glyph" style="top:82%;left:15%;--rot:2deg;--sz:1.1rem;--blur:0px;--op:0.04;--fd:8s;--fi:3">+375%</span>
+            <span class="bg-glyph" style="top:18%;right:7%;--rot:5deg;--sz:1.1rem;--blur:0px;--op:0.05;--fd:10s;--fi:4">WF 100%</span>
+            <span class="bg-glyph" style="top:45%;right:5%;--rot:-4deg;--sz:1.5rem;--blur:0px;--op:0.04;--fd:12s;--fi:5">$$</span>
+            <span class="bg-glyph" style="top:68%;right:12%;--rot:3deg;--sz:1rem;--blur:1px;--op:0.05;--fd:9s;--fi:6">2R</span>
+            <span class="bg-glyph" style="top:88%;right:20%;--rot:-2deg;--sz:1.2rem;--blur:0px;--op:0.04;--fd:11s;--fi:7">profit</span>
+            <span class="bg-glyph" style="top:8%;left:48%;--rot:1deg;--sz:1.3rem;--blur:0px;--op:0.04;--fd:8s;--fi:8">↑</span>
+            <span class="bg-glyph" style="top:92%;left:42%;--rot:-4deg;--sz:1rem;--blur:0px;--op:0.04;--fd:10s;--fi:9">PF</span>
+        </div>
+        <div class="container">
+            <div class="section-header reveal-up">
+                <div class="section-tag">Results</div>
+                <h2 class="section-title">Backtest<br><span class="title-gradient">Performance</span></h2>
+                <p class="section-desc">Performance varies by market regime and updates in the dashboard.</p>
+            </div>
+            <div class="perf-showcase reveal-up">
+                <div class="perf-card glass-card">
+                    <div class="perf-card-header">
+                        <div class="perf-badge"><span class="status-live"></span>Backtest · Out-of-Sample</div>
+                        <div class="perf-pair">ICT/SMC · M15 · 7 Symbols</div>
+                    </div>
+                    <div class="perf-stats-grid">
+                        <div class="perf-stat"><div class="perf-stat-value">1,277</div><div class="perf-stat-label">Total Trades</div></div>
+                        <div class="perf-stat"><div class="perf-stat-value">44.8%</div><div class="perf-stat-label">Win Rate</div></div>
+                        <div class="perf-stat"><div class="perf-stat-value">1.87</div><div class="perf-stat-label">Profit Factor</div></div>
+                        <div class="perf-stat"><div class="perf-stat-value">+375%</div><div class="perf-stat-label">Best Symbol</div></div>
+                        <div class="perf-stat"><div class="perf-stat-value">7/7</div><div class="perf-stat-label">Profitable</div></div>
+                        <div class="perf-stat"><div class="perf-stat-value">100%</div><div class="perf-stat-label">WF Windows</div></div>
+                    </div>
+                    <div class="perf-params">
+                        <span class="param-chip">BOS Detection</span><span class="param-chip">Order Blocks</span><span class="param-chip">FVG</span><span class="param-chip">Premium/Discount</span><span class="param-chip">Session Filter</span>
+                    </div>
+                    <div class="perf-note"><i class="fas fa-info-circle"></i> Results from 180-day out-of-sample backtest on real MT5 data. Past performance does not guarantee future results.</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- get-started -->
+    <section class="pricing-section" id="pricing">
+        <div class="bg-glyphs section-glyphs">
+            <span class="bg-glyph" style="top:10%;left:5%;--rot:-3deg;--sz:1.6rem;--blur:0px;--op:0.05;--fd:10s;--fi:0">$</span>
+            <span class="bg-glyph" style="top:32%;left:11%;--rot:4deg;--sz:1.1rem;--blur:1px;--op:0.04;--fd:9s;--fi:1">&gt;&gt;&gt;</span>
+            <span class="bg-glyph" style="top:58%;left:7%;--rot:-5deg;--sz:1.2rem;--blur:0px;--op:0.05;--fd:11s;--fi:2">MT5</span>
+            <span class="bg-glyph" style="top:80%;left:14%;--rot:2deg;--sz:1rem;--blur:0px;--op:0.04;--fd:8s;--fi:3">demo</span>
+            <span class="bg-glyph" style="top:15%;right:6%;--rot:5deg;--sz:1.4rem;--blur:0px;--op:0.05;--fd:10s;--fi:4">$$</span>
+            <span class="bg-glyph" style="top:42%;right:8%;--rot:-4deg;--sz:1.1rem;--blur:0px;--op:0.04;--fd:12s;--fi:5">live</span>
+            <span class="bg-glyph" style="top:65%;right:13%;--rot:3deg;--sz:1.3rem;--blur:1px;--op:0.05;--fd:9s;--fi:6">✓</span>
+            <span class="bg-glyph" style="top:88%;right:18%;--rot:-2deg;--sz:1rem;--blur:0px;--op:0.04;--fd:11s;--fi:7">go</span>
+            <span class="bg-glyph" style="top:6%;left:46%;--rot:1deg;--sz:1.5rem;--blur:0px;--op:0.04;--fd:8s;--fi:8">$</span>
+            <span class="bg-glyph" style="top:94%;left:40%;--rot:-3deg;--sz:1.15rem;--blur:0px;--op:0.04;--fd:10s;--fi:9">start</span>
+        </div>
+        <div class="container">
+            <div class="section-header reveal-up">
+                <div class="section-tag">Get Started</div>
+                <h2 class="section-title">Set Up Your<br><span class="title-gradient">Trading Bot</span></h2>
+                <p class="section-desc">Self-hosted and fully under your control. Connect MT5 and start trading.</p>
+            </div>
+            <div class="pricing-grid">
+                <div class="pricing-card glass-card reveal-up">
+                    <div class="pricing-tier">1. Connect MT5</div>
+                    <div class="pricing-desc">Link your MetaTrader 5 broker account</div>
+                    <ul class="pricing-features">
+                        <li><i class="fas fa-check"></i> Any MT5 broker supported</li>
+                        <li><i class="fas fa-check"></i> Demo or live account</li>
+                        <li><i class="fas fa-check"></i> Auto symbol detection</li>
+                    </ul>
+                    <a href="docs.html" class="btn-outline-hero pricing-btn">Setup Guide</a>
+                </div>
+                <div class="pricing-card pricing-card-featured glass-card reveal-up" data-delay="100">
+                    <div class="pricing-popular">Core</div>
+                    <div class="pricing-tier">2. Configure</div>
+                    <div class="pricing-desc">Set risk, symbols, and Telegram alerts</div>
+                    <ul class="pricing-features">
+                        <li><i class="fas fa-check"></i> ICT/SMC strategy built-in</li>
+                        <li><i class="fas fa-check"></i> 7 symbols pre-configured</li>
+                        <li><i class="fas fa-check"></i> Telegram notifications</li>
+                        <li><i class="fas fa-check"></i> Risk management controls</li>
+                    </ul>
+                    <a href="dashboard.html" class="btn-glow pricing-btn"><span class="btn-glow-text">Open Dashboard</span></a>
+                </div>
+                <div class="pricing-card glass-card reveal-up" data-delay="200">
+                    <div class="pricing-tier">3. Trade</div>
+                    <div class="pricing-desc">Run backtests or go live</div>
+                    <ul class="pricing-features">
+                        <li><i class="fas fa-check"></i> Split-sample backtests</li>
+                        <li><i class="fas fa-check"></i> Walk-forward validation</li>
+                        <li><i class="fas fa-check"></i> Live auto-trading via MT5</li>
+                        <li><i class="fas fa-check"></i> Real-time dashboard monitoring</li>
+                    </ul>
+                    <a href="signup.html" class="btn-outline-hero pricing-btn">Create Account</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- cta -->
+    <section class="cta-section">
+        <div class="bg-glyphs section-glyphs">
+            <span class="bg-glyph" style="top:15%;left:10%;--rot:-4deg;--sz:1.5rem;--blur:0px;--op:0.05;--fd:9s;--fi:0">→</span>
+            <span class="bg-glyph" style="top:50%;left:6%;--rot:3deg;--sz:1.6rem;--blur:1px;--op:0.04;--fd:11s;--fi:1">$</span>
+            <span class="bg-glyph" style="top:80%;left:15%;--rot:-2deg;--sz:1.1rem;--blur:0px;--op:0.05;--fd:8s;--fi:2">launch</span>
+            <span class="bg-glyph" style="top:20%;right:8%;--rot:5deg;--sz:1.3rem;--blur:0px;--op:0.05;--fd:10s;--fi:3">&gt;&gt;&gt;</span>
+            <span class="bg-glyph" style="top:55%;right:10%;--rot:-3deg;--sz:1.4rem;--blur:0px;--op:0.04;--fd:12s;--fi:4">$$</span>
+            <span class="bg-glyph" style="top:82%;right:16%;--rot:2deg;--sz:1rem;--blur:0px;--op:0.04;--fd:9s;--fi:5">go live</span>
+        </div>
+        <div class="cta-bg-orbs"><div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div></div>
+        <div class="container">
+            <div class="cta-content reveal-up">
+                <h2>Ready to see it in action?</h2>
+                <p>Launch the dashboard, run backtests, and explore the data yourself.</p>
+                <a href="dashboard.html" class="btn-glow btn-glow-lg"><span class="btn-glow-text">Launch Dashboard</span><span class="btn-glow-icon"><i class="fas fa-rocket"></i></span></a>
+            </div>
+        </div>
+    </section>
+
+    <!-- footer -->
+    <footer class="site-footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <a href="#" class="nav-brand">
+                        <div class="brand-icon"><svg viewBox="0 0 40 40" fill="none"><path d="M20 4L36 12V28L20 36L4 28V12L20 4Z" stroke="url(#brandGrad2)" stroke-width="2" fill="none"/><path d="M12 20L18 14L24 22L32 12" stroke="url(#brandGrad2)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="brandGrad2" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#00ff87"/><stop offset="100%" stop-color="#60efff"/></linearGradient></defs></svg></div>
+                        <span class="brand-text">Zenith</span>
                     </a>
-                    <a href="#performance" class="btn btn-outline btn-lg">
-                        View Stats
-                    </a>
+                    <p class="footer-desc">Automated algorithmic trading with multi-symbol backtesting and robustness verification.</p>
+                    <div class="footer-socials"><a href="https://github.com/Ravenko123/TradingBot" target="_blank"><i class="fab fa-github"></i></a><a href="#"><i class="fab fa-telegram"></i></a><a href="#"><i class="fab fa-discord"></i></a><a href="#"><i class="fab fa-instagram"></i></a></div>
                 </div>
-                <div class="hero-stats">
-                    <div class="stat-item">
-                        <div class="stat-value">4.0:1</div>
-                        <div class="stat-label">Risk/Reward Ratio</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value">19.5%</div>
-                        <div class="stat-label">Win Rate (60d)</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value">251</div>
-                        <div class="stat-label">Trades in 60d</div>
-                    </div>
-                </div>
+                <div class="footer-col"><h4>Product</h4><a href="#features">Features</a><a href="#strategy">Strategy</a><a href="#pricing">Pricing</a><a href="dashboard.html">Dashboard</a><a href="#performance">Performance</a></div>
+                <div class="footer-col"><h4>Resources</h4><a href="docs.html">Documentation</a><a href="docs.html#backtest">Backtest Guide</a><a href="about.html">About</a></div>
+                <div class="footer-col"><h4>Account</h4><a href="login.html">Login</a><a href="signup.html">Sign Up</a><a href="dashboard.html">Dashboard</a></div>
             </div>
-        </div>
-    </section>
-
-    <!-- Features Section -->
-    <section id="features" class="features">
-        <div class="container">
-            <div class="section-header">
-                <h2>Intelligent Trading Features</h2>
-                <p>Professional-grade tools for automated forex trading</p>
-            </div>
-            <div class="features-grid">
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <i class="fas fa-chart-line"></i>
-                    </div>
-                    <h3>EMA Crossover + RSI</h3>
-                    <p>Dual-confirmation trend strategy. Fast EMA (20-50) crosses Slow EMA (100-200) with RSI(14) >50 buy / <50 sell on neutral levels. Filters: ATR volatility, EMA gap, session hours.</p>
-                    <a href="dashboard.html" class="feature-link">View Strategy <i class="fas fa-arrow-right"></i></a>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <i class="fas fa-sliders-h"></i>
-                    </div>
-                    <h3>Automatic Risk Management</h3>
-                    <p>Position sizing based on account equity (1% risk/trade). ATR-based SL/TP, breakeven stops, trailing stops, and daily drawdown monitoring. Max 1.0 lot per trade.</p>
-                    <a href="docs.html" class="feature-link">View Details <i class="fas fa-arrow-right"></i></a>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <i class="fas fa-cogs"></i>
-                    </div>
-                    <h3>Grid Search Optimizer</h3>
-                    <p>Test 64 parameter combinations over 180 days. Real-time progress tracking, automatic best-param selection, and scoring by Profit Factor.</p>
-                    <a href="dashboard.html" class="feature-link">Run Optimizer <i class="fas fa-arrow-right"></i></a>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <i class="fas fa-database"></i>
-                    </div>
-                    <h3>MT5 Live Backtesting</h3>
-                    <p>Event-driven simulator using real EURUSD M15 data from MetaTrader 5. Full trade logs, equity curves, and comprehensive statistics (PF, ROI, DD, Win%).</p>
-                    <a href="dashboard.html" class="feature-link">View Trades <i class="fas fa-arrow-right"></i></a>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Strategy Section -->
-    <section id="strategy" class="strategies">
-        <div class="container">
-            <div class="section-header">
-                <h2>EMA Crossover Strategy</h2>
-                <p>Proven trend-following methodology for EURUSD M15</p>
-            </div>
-            <div class="strategies-grid">
-                <div class="strategy-card">
-                    <div class="strategy-header">
-                        <div class="strategy-icon gradient-bg-1">
-                            <i class="fas fa-chart-area"></i>
-                        </div>
-                        <h3>Entry Signals</h3>
-                    </div>
-                    <p>Fast EMA (20-50) crosses above/below Slow EMA (100-200). RSI confirmation prevents false signals in choppy markets.</p>
-                    <div class="strategy-metrics">
-                        <div class="metric">
-                            <span class="metric-label">Fast EMA</span>
-                            <span class="metric-value">20-50</span>
-                        </div>
-                        <div class="metric">
-                            <span class="metric-label">Slow EMA</span>
-                            <span class="metric-value">100-200</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="strategy-card">
-                    <div class="strategy-header">
-                        <div class="strategy-icon gradient-bg-2">
-                            <i class="fas fa-shield-alt"></i>
-                        </div>
-                        <h3>Risk Controls</h3>
-                    </div>
-                    <p>ATR-based stop-loss (1.1× ATR), 1:4 risk-reward ratio, position sizing via 1% account risk. Breakeven moves at 1.0R.</p>
-                    <div class="strategy-metrics">
-                        <div class="metric">
-                            <span class="metric-label">Risk per Trade</span>
-                            <span class="metric-value">1%</span>
-                        </div>
-                        <div class="metric">
-                            <span class="metric-label">Risk:Reward</span>
-                            <span class="metric-value">1:4</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="strategy-card">
-                    <div class="strategy-header">
-                        <div class="strategy-icon gradient-bg-3">
-                            <i class="fas fa-filter"></i>
-                        </div>
-                        <h3>Quality Filters</h3>
-                    </div>
-                    <p>Cooldown period between trades, session hours (07:00-22:00 UTC), EMA gap confirmation, and ATR volatility filter.</p>
-                    <div class="strategy-metrics">
-                        <div class="metric">
-                            <span class="metric-label">Session Hours</span>
-                            <span class="metric-value">07:00-22:00 UTC</span>
-                        </div>
-                        <div class="metric">
-                            <span class="metric-label">Min ATR</span>
-                            <span class="metric-value">3 pips</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Performance Section -->
-    <section id="performance" class="performance">
-        <div class="container">
-            <div class="section-header">
-                <h2>Live Backtest Results</h2>
-                <p>Verified performance from real EURUSD M15 data (October 2025 - January 2026)</p>
-            </div>
-            <div class="performance-grid">
-                <div class="performance-card">
-                    <div class="performance-header">
-                        <h3>60-Day Test Period (Oct 16 - Jan 9, 2026)</h3>
-                        <span class="badge badge-info">LATEST RUN</span>
-                    </div>
-                    <div class="performance-chart">
-                        <div class="chart-placeholder">
-                            <i class="fas fa-chart-line"></i>
-                            <p>Equity Curve: $9,944 Final Balance</p>
-                        </div>
-                    </div>
-                    <div class="performance-stats">
-                        <div class="stat">
-                            <span class="stat-label">Total Trades</span>
-                            <span class="stat-value positive">251</span>
-                        </div>
-                        <div class="stat">
-                            <span class="stat-label">Win Rate</span>
-                            <span class="stat-value">19.5%</span>
-                        </div>
-                        <div class="stat">
-                            <span class="stat-label">Profit Factor</span>
-                            <span class="stat-value warning">0.99 (Breakeven)</span>
-                        </div>
-                        <div class="stat">
-                            <span class="stat-label">ROI</span>
-                            <span class="stat-value warning">-0.56%</span>
-                        </div>
-                        <div class="stat">
-                            <span class="stat-label">Max Drawdown</span>
-                            <span class="stat-value">28.9%</span>
-                        </div>
-                        <div class="stat">
-                            <span class="stat-label">Avg Win:Loss</span>
-                            <span class="stat-value positive">$25.79 : $6.32</span>
-                        </div>
-                    </div>
-                    <div class="performance-config">
-                        <h4>Optimized Parameters</h4>
-                        <div class="config-tags">
-                            <span class="tag">EMA 20/200</span>
-                            <span class="tag">RSI 50/50</span>
-                            <span class="tag">SL 15p | TP 60p</span>
-                            <span class="tag">1:4 Risk:Reward</span>
-                            <span class="tag">Gap 2p | CD 2b</span>
-                        </div>
-                    </div>
-                    <div class="performance-note">
-                        <p><strong>Note:</strong> Market was range-bound Oct-Jan. Strategy performs best in trending conditions (target PF > 1.2 when market trends 3+ days).</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- CTA Section -->
-    <section class="cta">
-        <div class="container">
-            <div class="cta-content">
-                <h2>Test the EURUSD M15 Strategy</h2>
-                <p>Run backtests, optimize parameters, and explore grid search results in real-time</p>
-                <a href="dashboard.html" class="btn btn-primary btn-lg">
-                    Launch Backtester
-                    <i class="fas fa-chart-bar"></i>
-                </a>
-            </div>
-        </div>
-    </section>
-
-    <!-- Footer -->
-    <footer class="footer">
-        <div class="container">
-            <div class="footer-content">
-                <div class="footer-brand">
-                    <div class="nav-brand">
-                        <i class="fas fa-chart-line"></i>
-                        <span>EURUSD Trading Bot</span>
-                    </div>
-                    <p>Automated EMA crossover trading system with RSI confirmation and grid-search optimization for EURUSD M15.</p>
-                </div>
-                <div class="footer-links">
-                    <div class="footer-column">
-                        <h4>Product</h4>
-                        <ul>
-                            <li><a href="#features">Features</a></li>
-                            <li><a href="#strategy">Strategy</a></li>
-                            <li><a href="dashboard.html">Dashboard</a></li>
-                            <li><a href="#performance">Performance</a></li>
-                        </ul>
-                    </div>
-                    <div class="footer-column">
-                        <h4>Resources</h4>
-                        <ul>
-                            <li><a href="docs.html">Documentation</a></li>
-                            <li><a href="docs.html#backtest">Backtest Guide</a></li>
-                            <li><a href="docs.html#indicators">Indicators</a></li>
-                            <li><a href="about.html">About</a></li>
-                        </ul>
-                    </div>
-                    <div class="footer-column">
-                        <h4>Connect</h4>
-                        <ul>
-                            <li><a href="https://github.com/Ravenko123/TradingBot" target="_blank"><i class="fab fa-github"></i> GitHub</a></li>
-                            <li><a href="#"><i class="fab fa-telegram"></i> Telegram</a></li>
-                            <li><a href="#"><i class="fab fa-discord"></i> Discord</a></li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-            <div class="footer-bottom">
-                <p>&copy; 2025 EURUSD Trading Bot. Built for educational purposes.</p>
-            </div>
+            <div class="footer-bottom"><p>&copy; 2025 Zenith Trading Bot. Built for educational purposes.</p></div>
         </div>
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="js/main.js"></script>
+    <script src="js/main.js?v=20260225-01"></script>
 </body>
 </html>

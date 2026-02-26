@@ -3,15 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>About - EURUSD Trading Bot</title>
-    <link rel="stylesheet" href="css/style.css">
+    <title>About — Zenith Trading Bot</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260225-2">
+    <link rel="shortcut icon" href="/favicon.svg?v=20260225-2">
+    <link rel="apple-touch-icon" href="/favicon.svg?v=20260225-2">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css?v=20260226-3">
     <link rel="stylesheet" href="css/about.css">
 </head>
 <body>
+    <!-- Cosmic Background Layers -->
+    <div class="aurora-layer">
+        <div class="aurora-band-1"></div>
+        <div class="aurora-band-2"></div>
+    </div>
+    <div class="ghost-pairs-layer" id="ghostPairsLayer"></div>
+    <div class="orbital-system">
+        <div class="orbital-ring-1"></div>
+        <div class="orbital-ring-2"></div>
+    </div>
+    <div class="cursor-glow" id="cursorGlow"></div>
+
     <!-- Navigation -->
     <nav class="navbar">
         <div class="container">
-            <a href="index.html" class="logo">EURUSD<span>Trading</span></a>
+            <a href="index.html" class="logo">Zenith</a>
             <ul class="nav-menu">
                 <li><a href="index.html">Home</a></li>
                 <li><a href="dashboard.html">Dashboard</a></li>
@@ -25,8 +43,8 @@
     <!-- About Hero -->
     <section class="about-hero">
         <div class="container">
-            <h1 class="gradient-text">About EURUSD Trading Bot</h1>
-            <p class="lead">An educational project exploring trend-following strategies, backtesting methodologies, and quantitative trading analysis.</p>
+            <h1 class="gradient-text">About Zenith Trading Bot</h1>
+            <p class="lead">An algorithmic trading platform with multi-mode backtesting, real-time dashboards, and MT5 integration.</p>
         </div>
     </section>
 
@@ -36,25 +54,25 @@
             <div class="content-grid">
                 <div class="content-text">
                     <h2>Project Overview</h2>
-                    <p>EURUSD Trading Bot is a specialized algorithmic trading system developed to demonstrate professional backtesting practices, parameter optimization, and forex strategy development on the EURUSD M15 timeframe.</p>
-                    <p>The system implements a proven EMA crossover strategy with RSI confirmation, a professional-grade backtesting engine using real MT5 data, grid search optimization across 64+ parameter combinations, and comprehensive risk management protocols.</p>
+                    <p>Zenith Trading Bot is an algorithmic trading system built around ICT/SMC (Inner Circle Trader / Smart Money Concepts) methodology. It detects Break of Structure events, identifies Order Block zones, and enters pullback trades with multi-factor confluence scoring on the M15 timeframe.</p>
+                    <p>The system implements a state-machine signal engine with 7 confluence factors (BOS displacement, FVG, liquidity sweeps, session kill zones, premium/discount zones, rejection wicks, OB strength), break-even trailing, and ATR-based risk management. All signals are validated with split-sample backtesting and walk-forward analysis on real MT5 data.</p>
                     <p>This project combines quantitative finance principles with software engineering best practices, demonstrating data-driven decision making, statistical analysis, and system architecture design for automated trading systems.</p>
                 </div>
                 <div class="content-stats">
                     <div class="stat-card">
-                        <h3>609</h3>
-                        <p>Lines of Code</p>
+                        <h3>7</h3>
+                        <p>Markets Traded</p>
                     </div>
                     <div class="stat-card">
-                        <h3>251</h3>
-                        <p>Test Trades</p>
+                        <h3>1,277</h3>
+                        <p>Backtest Trades</p>
                     </div>
                     <div class="stat-card">
-                        <h3>64</h3>
-                        <p>Parameters Tested</p>
+                        <h3>7/7</h3>
+                        <p>Symbols Profitable</p>
                     </div>
                     <div class="stat-card">
-                        <h3>60</h3>
+                        <h3>180</h3>
                         <p>Days Backtested</p>
                     </div>
                 </div>
@@ -161,7 +179,7 @@
                     <ul>
                         <li>Real-time market data feeds</li>
                         <li>Historical data management</li>
-                        <li>CSV-based persistence</li>
+                        <li>SQLite database with WAL mode</li>
                         <li>Trade logging system</li>
                         <li>Performance metrics storage</li>
                     </ul>
@@ -202,7 +220,7 @@
                 <div class="research-card">
                     <div class="research-number">01</div>
                     <h3>Strategy Research</h3>
-                    <p>Extensive research into proven trading methodologies including Grid Trading, Inner Circle Trader concepts, Mean Reversion, and High-Frequency Scalping techniques.</p>
+                    <p>In-depth study of ICT/SMC methodology — Break of Structure, Order Blocks, Fair Value Gaps, liquidity sweeps, premium/discount zones, and kill zone session timing. Implemented as a multi-bar state machine with confluence scoring.</p>
                 </div>
 
                 <div class="research-card">
@@ -234,49 +252,49 @@
             
             <div class="results-grid">
                 <div class="result-card">
-                    <h3>BTCUSD Grid Strategy</h3>
+                    <h3>GBPJPY — ICT/SMC</h3>
                     <div class="result-metrics">
                         <div class="result-metric">
                             <span class="metric-label">Total Return</span>
-                            <span class="metric-value positive">16,473%</span>
+                            <span class="metric-value positive">+7,131%</span>
                         </div>
                         <div class="result-metric">
                             <span class="metric-label">Win Rate</span>
-                            <span class="metric-value">79.3%</span>
+                            <span class="metric-value">45.4%</span>
                         </div>
                         <div class="result-metric">
-                            <span class="metric-label">Sharpe Ratio</span>
-                            <span class="metric-value">3.31</span>
+                            <span class="metric-label">Profit Factor</span>
+                            <span class="metric-value">3.09</span>
                         </div>
                         <div class="result-metric">
-                            <span class="metric-label">Max Drawdown</span>
-                            <span class="metric-value">22.4%</span>
+                            <span class="metric-label">Total Trades</span>
+                            <span class="metric-value">174</span>
                         </div>
                     </div>
-                    <p class="result-note">Tested on M5 timeframe, Dec 10-16, 2025. 15 grid levels, sl_multiplier=6, ATR spacing.</p>
+                    <p class="result-note">M15 timeframe, 180-day split backtest (70/30), out-of-sample test set. ICT/SMC with confluence scoring.</p>
                 </div>
 
                 <div class="result-card">
-                    <h3>EURUSD Grid Strategy</h3>
+                    <h3>XAUUSD — ICT/SMC</h3>
                     <div class="result-metrics">
                         <div class="result-metric">
                             <span class="metric-label">Total Return</span>
-                            <span class="metric-value positive">1,513%</span>
+                            <span class="metric-value positive">+1,040%</span>
                         </div>
                         <div class="result-metric">
                             <span class="metric-label">Win Rate</span>
-                            <span class="metric-value">87.5%</span>
+                            <span class="metric-value">43.9%</span>
                         </div>
                         <div class="result-metric">
-                            <span class="metric-label">Sharpe Ratio</span>
-                            <span class="metric-value">2.85</span>
+                            <span class="metric-label">Profit Factor</span>
+                            <span class="metric-value">1.87</span>
                         </div>
                         <div class="result-metric">
-                            <span class="metric-label">Max Drawdown</span>
-                            <span class="metric-value">18.7%</span>
+                            <span class="metric-label">Total Trades</span>
+                            <span class="metric-value">155</span>
                         </div>
                     </div>
-                    <p class="result-note">Tested on M5 timeframe. 15 grid levels, sl_multiplier=3, ATR spacing.</p>
+                    <p class="result-note">M15 timeframe, 180-day split backtest (70/30), out-of-sample test set. ICT/SMC with confluence scoring.</p>
                 </div>
             </div>
 
@@ -322,11 +340,11 @@
                     <h3>Project Scope</h3>
                     <p>This project encompasses:</p>
                     <ul>
-                        <li>6 months of development time</li>
-                        <li>15,000+ lines of production code</li>
-                        <li>Comprehensive documentation and user guides</li>
-                        <li>Extensive testing and validation</li>
-                        <li>Professional-grade UI/UX design</li>
+                        <li>Multiple months of development</li>
+                        <li>Full-stack web application with API backend</li>
+                        <li>Documentation and user guides</li>
+                        <li>Testing and validation across multiple modes</li>
+                        <li>Custom UI/UX design</li>
                         <li>Real-world integration with trading platforms</li>
                     </ul>
                 </div>
@@ -352,9 +370,9 @@
             <h2>Get in Touch</h2>
             <p class="subtitle">Questions about this project?</p>
             <div class="contact-info">
-                <p>📧 Email: student@university.edu</p>
-                <p>💼 LinkedIn: linkedin.com/in/yourprofile</p>
-                <p>🐙 GitHub: github.com/yourusername/tradingbot</p>
+                <p>📧 GitHub: <a href="https://github.com/Ravenko123/TradingBot">github.com/Ravenko123/TradingBot</a></p>
+                <p>� Telegram: @zenithbot</p>
+                <p>� Discord: discord.gg/zenith</p>
             </div>
             <a href="docs.html" class="btn btn-primary">Read Documentation</a>
         </div>
@@ -363,9 +381,11 @@
     <!-- Footer -->
     <footer class="footer">
         <div class="container">
-            <p>&copy; 2025 Ultima. Academic Project - For Educational Purposes Only.</p>
+            <p>&copy; 2025 Zenith Trading Bot. Academic Project.</p>
             <p><a href="index.html">Home</a> | <a href="docs.html">Documentation</a> | <a href="about.html">About</a> | <a href="https://github.com">GitHub</a></p>
         </div>
     </footer>
+
+    <script src="js/main.js"></script>
 </body>
 </html>

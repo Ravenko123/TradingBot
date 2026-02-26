@@ -1,26 +1,8 @@
-"""
-AI TRADING SIMULATOR - Complete Training Environment
-====================================================
-A full AI training ring that simulates EVERYTHING the live bot does:
-- Market regime detection & adaptation
-- Pattern recognition & learning
-- Order flow analysis
-- Swing point detection
-- Position management decisions (breakeven, partials, trailing)
-- Expectancy-based parameter optimization
-- ML-style feature extraction
-
-The AI trains here until it becomes profitable, then saves for live trading.
-Run this to let the AI practice and learn from historical data 24/7.
-
-Usage:
-    python backtest_improved.py              # Single training run
-    python backtest_improved.py --loop       # Continuous training until profitable
-    python backtest_improved.py --loop 10    # Train for 10 iterations
-"""
+# backtest engine
 
 import os
 import sys
+import argparse
 import shutil
 import time
 import json
@@ -38,7 +20,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import matplotlib
-matplotlib.use('TkAgg')
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 try:
@@ -49,9 +31,7 @@ except:
 warnings.filterwarnings('ignore')
 
 
-# ============================================================================
-# AI TRAINING CONFIGURATION
-# ============================================================================
+# training config
 
 class MarketPhase(Enum):
     """Market behavior phases"""
@@ -114,9 +94,7 @@ class AILearningState:
 AI_STATE = AILearningState()
 AI_STATE_FILE = Path(__file__).parent / 'ai_data' / 'ai_training_state.json'
 
-# ============================================================================
-# CONFIG
-# ============================================================================
+# config
 
 INSTRUMENTS = {
     'EURUSD': {'pip_size': 0.0001, 'spread': 0.8, 'vol': 1.0},
@@ -147,11 +125,10 @@ BACKTEST_DAYS = 30  # Reduced for faster training
 MIN_EXPECTANCY_TO_SAVE = 5.0  # Minimum $ per trade expectancy to save params
 MIN_PROFIT_FACTOR = 1.5  # Minimum PF to consider params "good"
 MIN_TRADES_FOR_LEARNING = 20  # Need at least this many trades to learn
+INITIAL_BALANCE = 10000.0
 
 
-# ============================================================================
-# AI LEARNING FUNCTIONS
-# ============================================================================
+# learning funcs
 
 def load_ai_state() -> AILearningState:
     """Load AI learning state from disk."""
@@ -295,9 +272,16 @@ def detect_market_regime(df: pd.DataFrame, idx: int) -> MarketPhase:
     else:
         return MarketPhase.QUIET
 
-# ============================================================================
-# DATA FETCH
-# ============================================================================
+# data fetch
+
+def initialize_mt5() -> bool:
+    """Initialize MT5 terminal if available."""
+    if mt5 is None:
+        return False
+    try:
+        return bool(mt5.initialize())
+    except Exception:
+        return False
 
 def fetch_data(symbol: str, bars: int = 10000) -> pd.DataFrame:
     """Fetch data from MT5 with M5/H1 fallback and CSV fallback."""
@@ -332,6 +316,452 @@ def fetch_data(symbol: str, bars: int = 10000) -> pd.DataFrame:
     return None
 
 
+def calculate_max_drawdown(equity_curve: List[float]) -> float:
+    if len(equity_curve) < 2:
+        return 0.0
+    peak = equity_curve[0]
+    max_dd = 0.0
+    for value in equity_curve:
+        if value > peak:
+            peak = value
+        dd = peak - value
+        if dd > max_dd:
+            max_dd = dd
+    return float(max_dd)
+
+
+def _default_params_for_symbol(symbol: str) -> Tuple[int, int, float, float]:
+    # (fast_ema, slow_ema, adx_min, atr_mult)
+    # ADX >=22 is the standard 'trend present' threshold — below that = ranging market
+    if symbol == 'BTCUSD':
+        return (8, 21, 20.0, 2.0)
+    if symbol == 'XAUUSD':
+        return (8, 21, 22.0, 1.8)
+    if symbol == 'NAS100':
+        return (8, 21, 22.0, 1.6)
+    if symbol == 'USDJPY':
+        return (13, 50, 25.0, 1.6)
+    if symbol == 'GBPJPY':
+        return (10, 34, 22.0, 1.6)
+    # EURUSD, GBPUSD
+    return (13, 50, 22.0, 1.6)
+
+
+def _load_best_params(symbol: str) -> Tuple[int, int, float, float]:
+    defaults = _default_params_for_symbol(symbol)
+    try:
+        if BEST_SETTINGS_FILE.exists():
+            raw = json.loads(BEST_SETTINGS_FILE.read_text())
+            row = (raw.get('instruments') or {}).get(symbol, {})
+            fast = int(row.get('EMA_Fast', defaults[0]))
+            slow = int(row.get('EMA_Slow', defaults[1]))
+            adx = float(row.get('ADX', defaults[2]))
+            atr_m = float(row.get('ATR_Mult', defaults[3]))
+            if fast >= slow:
+                return defaults
+            return (fast, slow, adx, atr_m)
+    except Exception:
+        pass
+    return defaults
+
+
+def run_backtest_no_lookahead(df: pd.DataFrame, symbol: str, params: Optional[Tuple[int, int, float, float]] = None, risk_pct: float = 1.0) -> Dict:
+    """
+    Strict no-lookahead backtest:
+    - Signal computed on bar i-1 only
+    - Entry executed on bar i open
+    - Exits evaluated from current bar OHLC after entry
+    """
+    if df is None or len(df) < 120:
+        return {'symbol': symbol, 'trades': [], 'metrics': {}, 'equity_curve': [INITIAL_BALANCE]}
+
+    fast, slow, adx_th, atr_mult = params or _load_best_params(symbol)
+    df = add_indicators(df, fast_ema=fast, slow_ema=slow)
+    df = df.fillna(0).reset_index(drop=True)
+
+    open_arr = df['Open'].astype(float).to_numpy()
+    high_arr = df['High'].astype(float).to_numpy()
+    low_arr = df['Low'].astype(float).to_numpy()
+    close_arr = df['Close'].astype(float).to_numpy()
+    atr_arr = df['ATR'].astype(float).to_numpy()
+    ema_f = df['EMA_Fast'].astype(float).to_numpy()
+    ema_s = df['EMA_Slow'].astype(float).to_numpy()
+    adx = df['ADX'].astype(float).to_numpy()
+    rsi = df['RSI'].astype(float).to_numpy() if 'RSI' in df.columns else np.full(len(df), 50.0)
+    times = pd.to_datetime(df['Time']) if 'Time' in df.columns else pd.Series(range(len(df)))
+    hours = times.dt.hour.to_numpy() if hasattr(times, 'dt') else np.full(len(df), 12)
+
+    pip_size = INSTRUMENTS.get(symbol, INSTRUMENTS['EURUSD'])['pip_size']
+    spread = float(INSTRUMENTS.get(symbol, INSTRUMENTS['EURUSD'])['spread'])
+
+    trades = []
+    equity_curve = [INITIAL_BALANCE]
+    balance = INITIAL_BALANCE
+
+    in_trade = False
+    direction = 0
+    entry_price = 0.0
+    entry_idx = 0
+    stop_loss = 0.0
+    initial_stop = 0.0
+    take_profit = 0.0
+    bars_held = 0
+    moved_to_be = False
+    loss_cooldown_until = 0
+
+    atr_valid = atr_arr[np.isfinite(atr_arr) & (atr_arr > 0)]
+    atr_threshold = float(np.percentile(atr_valid, 20)) if len(atr_valid) else 0.0
+    base_risk_pct = max(0.1, min(10.0, risk_pct))  # use passed risk, clamped
+    # spread in price units (for proportional cost calculation)
+    spread_price = spread * pip_size
+
+    start = max(slow + 4, 60)
+    # Session windows per asset class
+    is_crypto = symbol in ('BTCUSD',)
+    is_us_index = symbol in ('NAS100',)
+    for i in range(start, len(df)):
+        prev = i - 1
+
+        if not in_trade:
+            if i < loss_cooldown_until:
+                continue
+
+            atr_prev = atr_arr[prev]
+            if atr_prev <= 0 or adx[prev] <= adx_th or atr_prev < atr_threshold:
+                continue
+
+            # Session filter: BTCUSD trades 24/7; NAS100 US session; others London+NY
+            h = hours[prev]
+            if is_crypto:
+                pass  # no hour restriction for crypto
+            elif is_us_index:
+                if h < 13 or h > 22:  # US/NY session ~13:00-22:00 UTC
+                    continue
+            else:
+                if h < 7 or h > 20:  # London + NY overlap
+                    continue
+
+            # RSI filter: avoid over-extended entries
+            rsi_prev = rsi[prev]
+            if rsi_prev > 70 or rsi_prev < 30:
+                continue
+
+            # --- Slope confirmation (5-bar window) ---
+            fast_slope = ema_f[prev] - ema_f[prev - 5]   # 5-bar slope (more stable than 3-bar)
+            slow_slope = ema_s[prev] - ema_s[prev - 3]
+
+            # -------------------------------------------------------
+            # ENTRY SIGNAL A: Fresh EMA crossover (within last 15 bars)
+            # -------------------------------------------------------
+            just_crossed_long = False
+            just_crossed_short = False
+            for look in range(1, 16):
+                lb = prev - look
+                if lb < 1:
+                    break
+                if ema_f[lb] <= ema_s[lb] and ema_f[prev] > ema_s[prev]:
+                    just_crossed_long = True
+                    break
+                if ema_f[lb] >= ema_s[lb] and ema_f[prev] < ema_s[prev]:
+                    just_crossed_short = True
+                    break
+
+            # Crossover must have slope backing it
+            cross_long_ok = just_crossed_long and fast_slope > 0 and slow_slope >= -atr_prev * 0.05
+            cross_short_ok = just_crossed_short and fast_slope < 0 and slow_slope <= atr_prev * 0.05
+
+            # -------------------------------------------------------
+            # ENTRY SIGNAL B: Pullback retest of fast EMA in trend
+            # Requirements: trend established 8+ bars, price bounced off EMA
+            # -------------------------------------------------------
+            pullback_long = False
+            pullback_short = False
+            if not just_crossed_long and not just_crossed_short and prev >= 10:
+                in_bull = ema_f[prev] > ema_s[prev] and all(
+                    ema_f[prev - k] > ema_s[prev - k] for k in range(1, 9)
+                )
+                in_bear = ema_f[prev] < ema_s[prev] and all(
+                    ema_f[prev - k] < ema_s[prev - k] for k in range(1, 9)
+                )
+                if in_bull and fast_slope > 0:  # trend accelerating up
+                    # Price touched (or went through) fast EMA in last 4 bars then closed back above
+                    touched = any(low_arr[prev - k] <= ema_f[prev - k] * 1.001 for k in range(1, 5))
+                    bounce_bar = close_arr[prev - 1] < ema_f[prev - 1] * 1.002  # prev bar near/below
+                    reclaim = close_arr[prev] > ema_f[prev]  # this bar closed above
+                    if touched and reclaim and (bounce_bar or touched):
+                        pullback_long = True
+                elif in_bear and fast_slope < 0:  # trend accelerating down
+                    touched = any(high_arr[prev - k] >= ema_f[prev - k] * 0.999 for k in range(1, 5))
+                    bounce_bar = close_arr[prev - 1] > ema_f[prev - 1] * 0.998
+                    reclaim = close_arr[prev] < ema_f[prev]
+                    if touched and reclaim and (bounce_bar or touched):
+                        pullback_short = True
+
+            long_ok = cross_long_ok or pullback_long
+            short_ok = cross_short_ok or pullback_short
+            signal = 1 if long_ok else -1 if short_ok else 0
+            if signal == 0:
+                continue
+
+            direction = signal
+            entry_idx = i
+            entry_price = open_arr[i]
+            stop_dist = max(atr_prev * atr_mult, pip_size * 3)
+            tp_dist = stop_dist * 2.5  # 2.5R TP
+
+            if direction == 1:
+                stop_loss = entry_price - stop_dist
+                take_profit = entry_price + tp_dist
+            else:
+                stop_loss = entry_price + stop_dist
+                take_profit = entry_price - tp_dist
+
+            in_trade = True
+            bars_held = 0
+            initial_stop = stop_loss
+            moved_to_be = False
+            continue
+
+        bars_held += 1
+        bar_high = high_arr[i]
+        bar_low = low_arr[i]
+        bar_close = close_arr[i]
+
+        # Breakeven at 1.5R — protect profit on winners
+        initial_risk = abs(entry_price - initial_stop)
+        if initial_risk > 0 and not moved_to_be:
+            favorable = (bar_high - entry_price) if direction == 1 else (entry_price - bar_low)
+            if favorable >= initial_risk * 1.5:
+                be_buffer = pip_size * 0.5
+                if direction == 1:
+                    stop_loss = max(stop_loss, entry_price + be_buffer)
+                else:
+                    stop_loss = min(stop_loss, entry_price - be_buffer)
+                moved_to_be = True
+
+        exit_triggered = False
+        exit_price = bar_close
+        exit_reason = 'Time'
+
+        if direction == 1:
+            if bar_low <= stop_loss:
+                exit_triggered = True
+                exit_price = stop_loss
+                exit_reason = 'SL'
+            elif bar_high >= take_profit:
+                exit_triggered = True
+                exit_price = take_profit
+                exit_reason = 'TP'
+        else:
+            if bar_high >= stop_loss:
+                exit_triggered = True
+                exit_price = stop_loss
+                exit_reason = 'SL'
+            elif bar_low <= take_profit:
+                exit_triggered = True
+                exit_price = take_profit
+                exit_reason = 'TP'
+
+        # Per-symbol max hold: default 96 bars (24 hrs); crypto/indices 128 bars
+        max_hold = 128 if symbol in ('BTCUSD', 'NAS100') else 96
+        if not exit_triggered and bars_held >= max_hold:
+            exit_triggered = True
+            exit_reason = 'Time'
+
+        if not exit_triggered:
+            continue
+
+        move = (exit_price - entry_price) if direction == 1 else (entry_price - exit_price)
+        risk_amount = balance * (base_risk_pct / 100.0)
+        stop_distance = abs(entry_price - initial_stop)  # always use initial stop for consistent sizing
+        gross_profit = (move / stop_distance) * risk_amount if stop_distance > 0 else 0.0
+        # Spread cost proportional to position size (spread in price units relative to stop)
+        spread_cost_usd = (spread_price / stop_distance) * risk_amount if stop_distance > 0 else 0.0
+        profit = float(gross_profit - spread_cost_usd)
+
+        balance += profit
+        equity_curve.append(balance)
+
+        trades.append({
+            'entry_time': times.iloc[entry_idx],
+            'exit_time': times.iloc[i],
+            'direction': 'BUY' if direction == 1 else 'SELL',
+            'entry_price': float(entry_price),
+            'exit_price': float(exit_price),
+            'stop_loss': float(stop_loss),
+            'take_profit': float(take_profit),
+            'profit': float(profit),
+            'exit_reason': exit_reason,
+            'bars_held': int(bars_held),
+        })
+
+        in_trade = False
+        direction = 0
+
+        if profit < 0 and exit_reason == 'SL':
+            loss_cooldown_until = i + 3  # 45-min cooldown after SL hit
+
+    if not trades:
+        return {
+            'symbol': symbol,
+            'trades': [],
+            'metrics': {
+                'total_trades': 0,
+                'wins': 0,
+                'losses': 0,
+                'win_rate': 0,
+                'total_profit': 0,
+                'avg_profit': 0,
+                'avg_win': 0,
+                'avg_loss': 0,
+                'best_trade': 0,
+                'worst_trade': 0,
+                'profit_factor': 0,
+                'max_drawdown': 0,
+                'final_balance': INITIAL_BALANCE,
+                'return_pct': 0,
+            },
+            'equity_curve': equity_curve,
+            'lookahead_safe': True,
+        }
+
+    profits = np.array([float(t['profit']) for t in trades], dtype=float)
+    wins = profits[profits > 0]
+    losses = profits[profits <= 0]
+    total_profit = float(np.sum(profits))
+    final_balance = float(INITIAL_BALANCE + total_profit)
+
+    metrics = {
+        'total_trades': int(len(trades)),
+        'wins': int(len(wins)),
+        'losses': int(len(losses)),
+        'win_rate': float((len(wins) / len(trades) * 100) if trades else 0),
+        'total_profit': total_profit,
+        'avg_profit': float(np.mean(profits)) if len(profits) else 0,
+        'avg_win': float(np.mean(wins)) if len(wins) else 0,
+        'avg_loss': float(np.mean(losses)) if len(losses) else 0,
+        'best_trade': float(np.max(profits)) if len(profits) else 0,
+        'worst_trade': float(np.min(profits)) if len(profits) else 0,
+        'profit_factor': float(np.sum(wins) / abs(np.sum(losses))) if len(losses) and abs(np.sum(losses)) > 0 else 99.0,
+        'max_drawdown': float(calculate_max_drawdown(equity_curve)),
+        'final_balance': final_balance,
+        'return_pct': float((final_balance - INITIAL_BALANCE) / INITIAL_BALANCE * 100),
+    }
+
+    return {
+        'symbol': symbol,
+        'trades': trades,
+        'metrics': metrics,
+        'equity_curve': equity_curve,
+        'lookahead_safe': True,
+    }
+
+
+def run_split_backtest(df: pd.DataFrame, symbol: str, split_ratio: float = 0.7) -> Dict:
+    if split_ratio <= 0 or split_ratio >= 1:
+        split_ratio = 0.7
+    split_idx = int(len(df) * split_ratio)
+    train_df = df.iloc[:split_idx].copy()
+    test_df = df.iloc[split_idx:].copy()
+    train_result = run_backtest_no_lookahead(train_df, symbol)
+    test_result = run_backtest_no_lookahead(test_df, symbol)
+    return {
+        'symbol': symbol,
+        'mode': 'split',
+        'split_ratio': split_ratio,
+        'train': {'metrics': train_result.get('metrics', {}), 'trades': train_result.get('trades', [])},
+        'test': {'metrics': test_result.get('metrics', {}), 'trades': test_result.get('trades', [])},
+    }
+
+
+def monte_carlo_analysis(trades: List[Dict], iterations: int = 200) -> Dict:
+    if not trades:
+        return {
+            'iterations': iterations,
+            'ending_balances': [],
+            'p10': 0,
+            'p50': 0,
+            'p90': 0,
+            'max_drawdown_avg': 0,
+        }
+
+    profits = [float(t.get('profit', 0.0)) for t in trades]
+    ending_balances = []
+    drawdowns = []
+    for _ in range(max(1, int(iterations))):
+        shuffled = profits.copy()
+        np.random.shuffle(shuffled)
+        balance = INITIAL_BALANCE
+        eq = [balance]
+        for p in shuffled:
+            balance += p
+            eq.append(balance)
+        ending_balances.append(balance)
+        drawdowns.append(calculate_max_drawdown(eq))
+
+    return {
+        'iterations': int(iterations),
+        'ending_balances': ending_balances,
+        'p10': float(np.percentile(ending_balances, 10)),
+        'p50': float(np.percentile(ending_balances, 50)),
+        'p90': float(np.percentile(ending_balances, 90)),
+        'max_drawdown_avg': float(np.mean(drawdowns)),
+    }
+
+
+def walk_forward_analysis(symbol: str, total_days: int = 180, train_days: int = 60, test_days: int = 30) -> Dict:
+    results = []
+    num_windows = max(0, (total_days - train_days) // test_days)
+    for window in range(num_windows):
+        end_days = train_days + (window + 1) * test_days
+        bars = max(1200, int(end_days * 96))
+        df = fetch_data(symbol, bars=bars)
+        if df is None or len(df) < 300:
+            continue
+        split_idx = int(len(df) * (train_days / max(end_days, 1)))
+        test_df = df.iloc[split_idx:].copy()
+        result = run_backtest_no_lookahead(test_df, symbol)
+        metrics = result.get('metrics', {})
+        if metrics:
+            results.append(metrics)
+
+    if not results:
+        return {
+            'symbol': symbol,
+            'mode': 'walk_forward',
+            'total_periods': 0,
+            'profitable_periods': 0,
+            'consistency': 0,
+            'average_profit_per_period': 0,
+            'periods': [],
+        }
+
+    profitable_periods = sum(1 for r in results if float(r.get('total_profit', 0)) > 0)
+    consistency = profitable_periods / len(results) * 100
+    avg_profit = float(np.mean([float(r.get('total_profit', 0)) for r in results]))
+    return {
+        'symbol': symbol,
+        'mode': 'walk_forward',
+        'total_periods': len(results),
+        'profitable_periods': profitable_periods,
+        'consistency': consistency,
+        'average_profit_per_period': avg_profit,
+        'periods': results,
+    }
+
+
+def build_output_payload(symbol: str, mode: str, result: Dict) -> Dict:
+    payload = {'symbol': symbol, 'mode': mode, 'timestamp': datetime.now().isoformat(), 'engine': 'backtest_improved.py'}
+    payload.update(result)
+    return payload
+
+
+def save_output(payload: Dict, output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(payload, f, indent=2, default=str)
+
+
 def get_data_duration(df: pd.DataFrame) -> str:
     """Calculate and return backtest duration in days/weeks/months."""
     if df is None or 'Time' not in df.columns or len(df) < 2:
@@ -351,7 +781,7 @@ def get_data_duration(df: pd.DataFrame) -> str:
 
 def add_indicators(df: pd.DataFrame, fast_ema: int = 20, slow_ema: int = 100, 
                    atr_period: int = 14, adx_period: int = 14) -> pd.DataFrame:
-    """Add EMA, ATR, ADX, Donchian channels"""
+    """Add EMA, ATR, ADX, RSI, Donchian channels"""
     df = df.copy()
     close = df['Close'].astype(float).values
     high = df['High'].astype(float).values
@@ -378,6 +808,14 @@ def add_indicators(df: pd.DataFrame, fast_ema: int = 20, slow_ema: int = 100,
     di_minus = 100 * (pd.Series(minus_dm).rolling(adx_period).mean().values / atr_safe)
     dx = 100 * (np.abs(di_plus - di_minus) / np.where((di_plus + di_minus) != 0, (di_plus + di_minus), np.nan))
     df['ADX'] = pd.Series(dx).rolling(adx_period).mean().values
+
+    # RSI (14)
+    delta = close_series.diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    rs = gain / loss.replace(0, np.nan)
+    df['RSI'] = 100 - (100 / (1 + rs))
+    df['RSI'] = df['RSI'].fillna(50)
     
     # Donchian High/Low (breakout levels)
     df['Donchian_High'] = pd.Series(high).rolling(20).max().values
@@ -388,9 +826,7 @@ def add_indicators(df: pd.DataFrame, fast_ema: int = 20, slow_ema: int = 100,
     
     return df
 
-# ============================================================================
-# STRATEGY
-# ============================================================================
+# strategy
 
 class TrendFollower:
     def __init__(self, fast_ema: int, slow_ema: int, adx_threshold: float,
@@ -405,9 +841,7 @@ class TrendFollower:
         self.session_start = session_start
         self.session_end = session_end
 
-# ============================================================================
-# BACKTEST ENGINE WITH AI LEARNING
-# ============================================================================
+# backtest engine w/ learning
 
 def backtest(df: pd.DataFrame, strategy: TrendFollower, symbol: str, learn: bool = True) -> dict:
     """
@@ -480,9 +914,7 @@ def backtest(df: pd.DataFrame, strategy: TrendFollower, symbol: str, learn: bool
             short_ok = (ema_f[i] < ema_s[i])
             signal = 1 if long_ok else -1 if short_ok else 0
 
-        # ============================================================
-        # ENTRY - with AI pattern capture
-        # ============================================================
+        # entry
         if position == 0 and signal != 0:
             position = signal
             entry_price = close[i]
@@ -527,9 +959,7 @@ def backtest(df: pd.DataFrame, strategy: TrendFollower, symbol: str, learn: bool
                 pyramid_count += 1
                 bars_in_trade = 0
         
-        # ============================================================
-        # POSITION MANAGEMENT - Simulate AI decisions
-        # ============================================================
+        # position mgmt
         if position != 0:
             bars_in_trade += 1
             
@@ -576,9 +1006,7 @@ def backtest(df: pd.DataFrame, strategy: TrendFollower, symbol: str, learn: bool
                     new_stop = close[i] + strategy.atr_mult * atr[i]
                     stop_price = min(stop_price if stop_price is not None else new_stop, new_stop)
         
-        # ============================================================
-        # EXIT CONDITIONS
-        # ============================================================
+        # exit conditions
         exit_now = False
         exit_reason = ""
         
@@ -616,9 +1044,7 @@ def backtest(df: pd.DataFrame, strategy: TrendFollower, symbol: str, learn: bool
                 exit_now = True
                 exit_reason = "momentum_died"
 
-        # ============================================================
-        # TRADE CLOSE - Record for AI learning
-        # ============================================================
+        # trade close
         if exit_now:
             pip_move = (close[i] - entry_price) / pip_size
             trade_pnl = pip_move * position * 10 * pyramid_count - INSTRUMENTS[symbol]['spread'] * pyramid_count
@@ -642,9 +1068,7 @@ def backtest(df: pd.DataFrame, strategy: TrendFollower, symbol: str, learn: bool
                     rr_ratio = max(0.0, min(rr_ratio, 5.0))
                     rr_ratios.append(rr_ratio)
             
-            # ============================================================
-            # AI LEARNING - Record pattern outcome
-            # ============================================================
+            # record pattern outcome
             if learn and entry_features:
                 pattern_id = get_pattern_id(entry_features)
                 
@@ -729,9 +1153,7 @@ def backtest(df: pd.DataFrame, strategy: TrendFollower, symbol: str, learn: bool
         'avg_loss': avg_loss,
     }
 
-# ============================================================================
-# OPTIMIZATION WITH EXPECTANCY FOCUS
-# ============================================================================
+# optimization
 
 def optimize(symbol: str, df: pd.DataFrame, learn: bool = True) -> tuple:
     """
@@ -978,9 +1400,7 @@ def print_ai_insights():
                 print(f"   {hour}:00 UTC - ${profit:.0f} profit ({trades} trades)")
 
 
-# ============================================================================
-# MAIN - AI TRAINING LOOP
-# ============================================================================
+# main
 
 def main():
     """
@@ -1228,10 +1648,54 @@ def continuous_training(max_iterations: int = None):
         save_ai_state()
 
 
+def run_cli_backtest_mode() -> int:
+    parser = argparse.ArgumentParser(description='Backtest Improved - API/CLI modes')
+    parser.add_argument('--symbol', type=str, default='EURUSD', help='Single symbol')
+    parser.add_argument('--mode', type=str, choices=['standard', 'walk_forward', 'split', 'monte_carlo'], default='standard')
+    parser.add_argument('--split-ratio', type=float, default=0.7)
+    parser.add_argument('--mc-iterations', type=int, default=200)
+    parser.add_argument('--run-id', type=str, default=None)
+    parser.add_argument('--output', type=str, default=None)
+    parser.add_argument('--walk-forward', action='store_true', help='Alias for --mode walk_forward')
+    args = parser.parse_args()
+
+    mode = 'walk_forward' if args.walk_forward else args.mode
+    symbol = str(args.symbol or 'EURUSD').upper()
+
+    if mode == 'walk_forward':
+        result = walk_forward_analysis(symbol)
+        payload = build_output_payload(symbol, mode, result)
+    else:
+        df = fetch_data(symbol, bars=10000)
+        if df is None or len(df) < 120:
+            payload = build_output_payload(symbol, mode, {'metrics': {}, 'trades': [], 'error': 'Not enough data'})
+        elif mode == 'split':
+            result = run_split_backtest(df, symbol, split_ratio=float(args.split_ratio))
+            payload = build_output_payload(symbol, mode, result)
+        else:
+            standard = run_backtest_no_lookahead(df, symbol)
+            if mode == 'monte_carlo':
+                mc = monte_carlo_analysis(standard.get('trades', []), iterations=int(args.mc_iterations))
+                payload = build_output_payload(symbol, mode, {'standard': standard, 'monte_carlo': mc})
+            else:
+                payload = build_output_payload(symbol, mode, standard)
+
+    if args.output:
+        output_file = Path(args.output)
+    else:
+        run_id = args.run_id or f"{symbol}_{mode}"
+        output_file = DATA_DIR / f"{run_id}.json"
+    save_output(payload, output_file)
+
+    return 0
+
+
 if __name__ == '__main__':
-    # Parse command line arguments
+    cli_args = {'--symbol', '--mode', '--split-ratio', '--mc-iterations', '--run-id', '--output', '--walk-forward'}
+    if any(arg in sys.argv for arg in cli_args):
+        raise SystemExit(run_cli_backtest_mode())
+
     if '--loop' in sys.argv:
-        # Find iteration count if specified
         idx = sys.argv.index('--loop')
         if idx + 1 < len(sys.argv):
             try:

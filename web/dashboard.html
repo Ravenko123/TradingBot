@@ -3,136 +3,323 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - EURUSD Trading Bot</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/dashboard.css">
+    <title>Dashboard — Zenith Trading Bot</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260225-2">
+    <link rel="shortcut icon" href="/favicon.svg?v=20260225-2">
+    <link rel="apple-touch-icon" href="/favicon.svg?v=20260225-2">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="css/style.css?v=20260226-3">
+    <link rel="stylesheet" href="css/dashboard.css?v=20260226-1">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body class="dashboard-body">
+
+    <!-- Cosmic Background Layers -->
+    <div class="dash-nebula-canvas" id="dashNebulaCanvas"></div>
+    <div class="ghost-pairs-layer" id="ghostPairsLayer"></div>
+    <div class="dash-reactive-grid" id="dashReactiveGrid"></div>
+    <div class="dash-vignette"></div>
+    <canvas id="particleCanvas"></canvas>
+
     <!-- Sidebar -->
-    <aside class="sidebar">
+    <aside class="sidebar glass-card">
         <div class="sidebar-header">
-            <div class="nav-brand">
-                <i class="fas fa-chart-line"></i>
-                <span>EURUSD Bot</span>
-            </div>
+            <a href="index.html" class="nav-brand">
+                <div class="brand-icon">
+                    <svg viewBox="0 0 40 40" fill="none">
+                        <path d="M20 4L36 12V28L20 36L4 28V12L20 4Z" stroke="url(#dbg)" stroke-width="2" fill="none"/>
+                        <path d="M20 10L30 16V26L20 32L10 26V16L20 10Z" fill="url(#dbg)" opacity="0.15"/>
+                        <path d="M12 20L18 14L24 22L32 12" stroke="url(#dbg)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <defs><linearGradient id="dbg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#00ff87"/><stop offset="100%" stop-color="#60efff"/></linearGradient></defs>
+                    </svg>
+                </div>
+                <span class="brand-text">Zenith</span>
+            </a>
         </div>
+
         <nav class="sidebar-nav">
-            <a href="#overview" class="sidebar-link active">
-                <i class="fas fa-chart-bar"></i>
-                <span>Backtest Results</span>
-            </a>
-            <a href="#trading" class="sidebar-link">
-                <i class="fas fa-history"></i>
-                <span>Trade Log</span>
-            </a>
-            <a href="#positions" class="sidebar-link">
-                <i class="fas fa-chart-area"></i>
-                <span>Equity Curve</span>
-            </a>
-            <a href="#history" class="sidebar-link">
-                <i class="fas fa-list"></i>
-                <span>Statistics</span>
-            </a>
-            <a href="#strategies" class="sidebar-link">
-                <i class="fas fa-cogs"></i>
-                <span>Optimizer</span>
-            </a>
-            <a href="#settings" class="sidebar-link">
-                <i class="fas fa-sliders-h"></i>
-                <span>Settings</span>
-            </a>
+            <a href="#overview" class="sidebar-link active" data-section="overview"><i class="fas fa-chart-bar"></i><span>Overview</span></a>
+            <a href="#backtest" class="sidebar-link" data-section="backtest"><i class="fas fa-flask"></i><span>Backtest</span></a>
+            <a href="#mt5" class="sidebar-link" data-section="mt5"><i class="fas fa-plug"></i><span>MT5</span></a>
+            <a href="#runs" class="sidebar-link" data-section="runs"><i class="fas fa-list"></i><span>Runs</span></a>
+            <a href="#history" class="sidebar-link" data-section="history"><i class="fas fa-history"></i><span>Trades</span></a>
         </nav>
+
         <div class="sidebar-footer">
-            <a href="index.html" class="sidebar-link">
-                <i class="fas fa-home"></i>
-                <span>Home</span>
-            </a>
-            <a href="docs.html" class="sidebar-link">
-                <i class="fas fa-book"></i>
-                <span>Docs</span>
-            </a>
+            <a href="profile.html" class="sidebar-link"><i class="fas fa-user"></i><span>Profile</span></a>
+            <a href="index.html" class="sidebar-link"><i class="fas fa-home"></i><span>Home</span></a>
+            <button id="logoutBtn" class="sidebar-link" style="border: none; background: none; width: 100%; text-align: left; padding: 12px 16px; cursor: pointer;"><i class="fas fa-sign-out-alt"></i><span>Logout</span></button>
         </div>
     </aside>
 
     <!-- Main Content -->
     <main class="dashboard-main">
         <!-- Top Bar -->
-        <div class="top-bar">
+        <div class="top-bar glass-card">
             <div class="top-bar-left">
-                <h1>Backtest Dashboard</h1>
+                <button class="mobile-nav-toggle" id="mobileNavToggle" style="display: none; background: none; border: none; color: #00ff87; font-size: 20px; cursor: pointer; padding: 8px;"><i class="fas fa-bars"></i></button>
+                <h1>Dashboard</h1>
                 <div class="bot-status">
-                    <span class="status-indicator status-active"></span>
-                    <span>Test Completed</span>
+                    <span class="status-indicator status-inactive" id="botIndicator"></span>
+                    <span id="botStatusText">Bot Stopped</span>
                 </div>
             </div>
             <div class="top-bar-right">
-                <button class="btn btn-outline btn-sm" id="refreshBtn">
-                    <i class="fas fa-sync-alt"></i>
-                    Refresh
-                </button>
-                <button class="btn btn-primary btn-sm" id="startStopBtn">
-                    <i class="fas fa-play"></i>
-                    Run Backtest
-                </button>
+                <button class="btn btn-outline btn-sm" id="refreshBtn" title="Refresh all data"><i class="fas fa-sync-alt"></i></button>
+                <button class="btn btn-glow btn-sm" id="startStopBtn" title="Toggle bot"><i class="fas fa-play"></i></button>
+                <a href="profile.html" class="btn btn-outline btn-sm" title="Profile"><i class="fas fa-user"></i></a>
             </div>
         </div>
 
         <!-- Overview Section -->
         <section id="overview" class="dashboard-section">
-            <!-- Stats Cards -->
+            <div class="section-header-dash">
+                <h2><i class="fas fa-chart-bar"></i> Account Overview</h2>
+                <span class="section-timestamp">Last updated: <span id="lastUpdate">Just now</span></span>
+            </div>
+
             <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-card-header">
-                        <span class="stat-label">Final Balance</span>
-                        <i class="fas fa-wallet stat-icon"></i>
+                <div class="stat-card glass-card">
+                    <div class="stat-card-glow"></div>
+                    <div class="stat-label"><i class="fas fa-wallet"></i> Balance</div>
+                    <div class="stat-value">$<span id="balance">10,000</span></div>
+                    <div class="stat-change" id="balanceChangeEl"><i class="fas fa-arrow-up"></i> <span id="balanceChange">0%</span></div>
+                </div>
+
+                <div class="stat-card glass-card">
+                    <div class="stat-card-glow"></div>
+                    <div class="stat-label"><i class="fas fa-exchange-alt"></i> Total Trades</div>
+                    <div class="stat-value"><span id="totalTrades">0</span></div>
+                    <div class="stat-change"><i class="fas fa-info-circle"></i> <span>This Session</span></div>
+                </div>
+
+                <div class="stat-card glass-card">
+                    <div class="stat-card-glow"></div>
+                    <div class="stat-label"><i class="fas fa-bullseye"></i> Win Rate</div>
+                    <div class="stat-value"><span id="winRate">0</span><span class="stat-unit">%</span></div>
+                    <div class="stat-change"><i class="fas fa-info-circle"></i> <span>Trades</span></div>
+                </div>
+
+                <div class="stat-card glass-card">
+                    <div class="stat-card-glow"></div>
+                    <div class="stat-label"><i class="fas fa-chart-line"></i> Profit Factor</div>
+                    <div class="stat-value"><span id="profitFactor">0.00</span></div>
+                    <div class="stat-change"><i class="fas fa-info-circle"></i> <span>Risk/Reward</span></div>
+                </div>
+
+                <div class="stat-card glass-card">
+                    <div class="stat-card-glow"></div>
+                    <div class="stat-label"><i class="fas fa-arrow-down"></i> Max Drawdown</div>
+                    <div class="stat-value negative"><span id="maxDrawdown">0</span><span class="stat-unit">%</span></div>
+                    <div class="stat-change"><i class="fas fa-info-circle"></i> <span>Peak-to-Trough</span></div>
+                </div>
+
+                <div class="stat-card glass-card">
+                    <div class="stat-card-glow"></div>
+                    <div class="stat-label"><i class="fas fa-star"></i> Sharpe Ratio</div>
+                    <div class="stat-value"><span id="sharpeRatio">0.00</span></div>
+                    <div class="stat-change"><i class="fas fa-info-circle"></i> <span>Risk-Adjusted</span></div>
+                </div>
+            </div>
+
+            <div class="bot-activity glass-card reveal-up" data-delay="50">
+                <div class="activity-header">
+                    <div>
+                        <h3><i class="fas fa-bolt"></i> Bot Activity</h3>
+                        <p>Live status and engine heartbeat from the trading bot.</p>
                     </div>
-                    <div class="stat-value">$<span id="balance">9,944</span></div>
-                    <div class="stat-change negative">
-                        <i class="fas fa-arrow-down"></i>
-                        <span id="balanceChange">-0.56%</span>
+                    <span class="activity-pill" id="botActivityState">Idle</span>
+                </div>
+                <div class="activity-grid">
+                    <div class="activity-item">
+                        <span class="activity-label">Engine Status</span>
+                        <span class="activity-value" id="botEngineStatus">Stopped</span>
+                    </div>
+                    <div class="activity-item">
+                        <span class="activity-label">Process</span>
+                        <span class="activity-value" id="botProcessStatus">Not running</span>
+                    </div>
+                    <div class="activity-item">
+                        <span class="activity-label">Strategy</span>
+                        <span class="activity-value" id="botStrategy">—</span>
+                    </div>
+                    <div class="activity-item">
+                        <span class="activity-label">Heartbeat</span>
+                        <span class="activity-value" id="botHeartbeat">—</span>
+                    </div>
+                    <div class="activity-item">
+                        <span class="activity-label">PID</span>
+                        <span class="activity-value" id="botPid">—</span>
+                    </div>
+                    <div class="activity-item">
+                        <span class="activity-label">Last Update</span>
+                        <span class="activity-value" id="botLastUpdate">—</span>
                     </div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-card-header">
-                        <span class="stat-label">Total Trades</span>
-                        <i class="fas fa-exchange-alt stat-icon"></i>
+                <div class="activity-hint"><i class="fas fa-info-circle"></i> If the bot is running, the heartbeat should update every few seconds and trades will appear in the Trades table.</div>
+            </div>
+
+            <div class="form-card glass-card reveal-up" data-delay="70">
+                <div class="table-toolbar">
+                    <div class="table-toolbar-left">
+                        <h3><i class="fas fa-sliders"></i> Live Bot Settings (Telegram parity)</h3>
+                        <span class="table-subtitle">Risk, active symbols, and runtime insights</span>
                     </div>
-                    <div class="stat-value"><span id="totalTrades">251</span></div>
-                    <div class="stat-change">
-                        <i class="fas fa-info-circle"></i>
-                        <span>60 Days</span>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-card-header">
-                        <span class="stat-label">Win Rate</span>
-                        <i class="fas fa-percentage stat-icon"></i>
-                    </div>
-                    <div class="stat-value"><span id="winRate">19.5</span>%</div>
-                    <div class="stat-change">
-                        <i class="fas fa-info-circle"></i>
-                        <span>Range-Bound Market</span>
+                    <div class="table-toolbar-right">
+                        <button class="btn btn-outline btn-sm" id="reloadBotConfigBtn"><i class="fas fa-rotate"></i> Reload</button>
                     </div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-card-header">
-                        <span class="stat-label">Profit Factor</span>
-                        <i class="fas fa-chart-line stat-icon"></i>
+
+                <div class="form-group-grid">
+                    <div class="form-group">
+                        <label><i class="fas fa-percent" style="color:var(--z-green);margin-right:6px;font-size:0.75rem;"></i>Risk per Trade (%)</label>
+                        <input id="botRiskInput" type="number" class="text-input" min="0.01" max="100" step="0.01" placeholder="e.g. 2.0" />
+                        <span class="form-hint">Equivalent to Telegram <strong>/risk</strong></span>
                     </div>
-                    <div class="stat-value"><span id="pnl">0.99</span></div>
-                    <div class="stat-change">
-                        <i class="fas fa-info-circle"></i>
-                        <span>Near Breakeven</span>
+                    <div class="form-group" style="display:flex;align-items:flex-end;gap:10px;">
+                        <button class="btn btn-glow" id="saveBotRiskBtn"><i class="fas fa-save"></i> Save Risk</button>
+                        <button class="btn btn-outline" id="enableAllSymbolsBtn"><i class="fas fa-check-double"></i> Enable All</button>
+                        <button class="btn btn-outline" id="disableAllSymbolsBtn"><i class="fas fa-ban"></i> Disable All</button>
+                    </div>
+                </div>
+
+                <div class="bot-symbol-grid" id="botSymbolsGrid"></div>
+                <div class="form-status" id="botConfigStatus"></div>
+            </div>
+
+            <div class="form-card glass-card reveal-up telegram-config-card" data-delay="80">
+                <div class="table-toolbar">
+                    <div class="table-toolbar-left">
+                        <h3><i class="fab fa-telegram-plane"></i> Telegram Login</h3>
+                        <span class="table-subtitle">Connect your Telegram bot token and chat ID</span>
+                    </div>
+                </div>
+
+                <div class="form-group-grid telegram-grid">
+                    <div class="form-group">
+                        <label><i class="fas fa-key" style="color:var(--z-green);margin-right:6px;font-size:0.75rem;"></i>Bot Token</label>
+                        <input id="telegramBotToken" type="password" class="text-input" placeholder="123456789:AA..." autocomplete="off" />
+                        <span class="form-hint">Create token in @BotFather</span>
+                    </div>
+                    <div class="form-group">
+                        <label><i class="fas fa-hashtag" style="color:var(--z-green);margin-right:6px;font-size:0.75rem;"></i>Chat ID</label>
+                        <input id="telegramChatId" type="text" class="text-input" placeholder="e.g. 123456789" autocomplete="off" />
+                        <span class="form-hint">Your personal or group chat ID</span>
+                    </div>
+                    <div class="form-group telegram-actions">
+                        <button class="btn btn-glow" id="saveTelegramConfigBtn"><i class="fas fa-link"></i> Save Telegram Login</button>
+                    </div>
+                </div>
+                <div class="form-status" id="telegramConfigStatus"></div>
+            </div>
+
+            <div class="form-card glass-card reveal-up" data-delay="90">
+                <div class="table-toolbar">
+                    <div class="table-toolbar-left">
+                        <h3><i class="fas fa-wave-square"></i> Live Trade Monitor</h3>
+                        <span class="table-subtitle">Signals, opened/failed orders, open positions, and engine log</span>
+                    </div>
+                    <div class="table-toolbar-right">
+                        <button class="btn btn-outline btn-sm" id="refreshLiveMonitorBtn"><i class="fas fa-rotate"></i> Refresh Monitor</button>
+                    </div>
+                </div>
+
+                <div class="runs-summary-strip">
+                    <div class="runs-summary-card glass-card">
+                        <div class="runs-summary-icon"><i class="fas fa-satellite-dish"></i></div>
+                        <div><div class="runs-summary-value" id="liveSignalsCount">0</div><div class="runs-summary-label">Signals</div></div>
+                    </div>
+                    <div class="runs-summary-card glass-card">
+                        <div class="runs-summary-icon success"><i class="fas fa-circle-check"></i></div>
+                        <div><div class="runs-summary-value" id="liveOpenedCount">0</div><div class="runs-summary-label">Opened</div></div>
+                    </div>
+                    <div class="runs-summary-card glass-card">
+                        <div class="runs-summary-icon running"><i class="fas fa-circle-xmark"></i></div>
+                        <div><div class="runs-summary-value" id="liveFailedCount">0</div><div class="runs-summary-label">Failed</div></div>
+                    </div>
+                    <div class="runs-summary-card glass-card">
+                        <div class="runs-summary-icon"><i class="fas fa-folder-open"></i></div>
+                        <div><div class="runs-summary-value" id="liveOpenPositionsCount">0</div><div class="runs-summary-label">Open Positions</div></div>
+                    </div>
+                </div>
+
+                <div class="table-scroll-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Ticket</th>
+                                <th>Symbol</th>
+                                <th>Direction</th>
+                                <th>Volume</th>
+                                <th>Open</th>
+                                <th>Current</th>
+                                <th>P&amp;L</th>
+                            </tr>
+                        </thead>
+                        <tbody id="liveOpenPositionsTable">
+                            <tr class="empty-state-row"><td colspan="7">No open positions</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="table-scroll-wrap" style="margin-top:16px;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Symbol</th>
+                                <th>Message</th>
+                            </tr>
+                        </thead>
+                        <tbody id="botActivityTable">
+                            <tr class="empty-state-row"><td colspan="3">No activity events yet</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="form-group" style="margin-top:16px;">
+                    <label><i class="fas fa-file-lines" style="color:var(--z-green);margin-right:6px;font-size:0.75rem;"></i>Raw Engine Log</label>
+                    <pre id="botRawLog" class="bot-raw-log">No logs yet.</pre>
+                </div>
+            </div>
+
+            <!-- Trading Activity Timeline -->
+            <div class="trading-activity glass-card reveal-up">
+                <div class="card-glow"></div>
+                <div class="activity-header">
+                    <div>
+                        <h3><i class="fas fa-chart-line"></i> Trading Activity</h3>
+                        <p>Recent signal triggers and position management</p>
+                    </div>
+                </div>
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <div class="timeline-marker success"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">Just now</div>
+                            <div class="timeline-title">Strategy Monitoring Active</div>
+                            <div class="timeline-desc">Scanning markets for entry signals...</div>
+                        </div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-marker"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">—</div>
+                            <div class="timeline-title">No Recent Activity</div>
+                            <div class="timeline-desc">Start the bot to see live trading events</div>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <!-- Charts Row -->
-            <div class="charts-row">
-                <div class="chart-card">
-                    <div class="chart-card-header">
-                        <h3>Equity Curve (60 Days)</h3>
+            <div class="charts-section">
+                <div class="chart-card glass-card reveal-up">
+                    <div class="card-glow"></div>
+                    <div class="chart-header">
+                        <h3><i class="fas fa-chart-area"></i> Equity Curve</h3>
                         <select id="equityTimeframe" class="select-input">
                             <option value="1d">1 Day</option>
                             <option value="7d">7 Days</option>
@@ -140,189 +327,751 @@
                             <option value="all" selected>All Time</option>
                         </select>
                     </div>
-                    <div class="chart-container">
+                    <div class="chart-container" style="position: relative; height: 280px;">
                         <canvas id="equityChart"></canvas>
                     </div>
                 </div>
-                <div class="chart-card">
-                    <div class="chart-card-header">
-                        <h3>Trade Analysis</h3>
-                    </div>
-                    <div class="metrics-grid">
-                        <div class="metric-item">
-                            <span class="metric-label">Sharpe Ratio</span>
-                            <span class="metric-value" id="sharpeRatio">1.58</span>
-                        </div>
-                        <div class="metric-item">
-                            <span class="metric-label">Profit Factor</span>
-                            <span class="metric-value" id="profitFactor">3.37</span>
-                        </div>
-                        <div class="metric-item">
-                            <span class="metric-label">Max Drawdown</span>
-                            <span class="metric-value negative" id="maxDrawdown">-12.5%</span>
-                        </div>
-                        <div class="metric-item">
+
+                <div class="metrics-card glass-card reveal-up" data-delay="100">
+                    <div class="card-glow"></div>
+                    <h3><i class="fas fa-tachometer-alt"></i> Performance Metrics</h3>
+                    <div class="metrics-grid-dash">
+                        <div class="metric-row">
                             <span class="metric-label">Avg Win</span>
-                            <span class="metric-value positive" id="avgWin">+$534</span>
+                            <span class="metric-value positive" id="avgWin">+$0.00</span>
                         </div>
-                        <div class="metric-item">
+                        <div class="metric-row">
                             <span class="metric-label">Avg Loss</span>
-                            <span class="metric-value negative" id="avgLoss">-$158</span>
+                            <span class="metric-value negative" id="avgLoss">-$0.00</span>
                         </div>
-                        <div class="metric-item">
+                        <div class="metric-row">
                             <span class="metric-label">Largest Win</span>
-                            <span class="metric-value positive" id="largestWin">+$3,802</span>
+                            <span class="metric-value positive" id="largestWin">+$0.00</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Win/Loss Ratio</span>
+                            <span class="metric-value" id="winLossRatio">0.00</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Health & Risk Management -->
+            <div class="system-panels">
+                <div class="system-health glass-card reveal-up">
+                    <div class="card-glow"></div>
+                    <h3><i class="fas fa-heartbeat"></i> System Health</h3>
+                    <div class="health-grid">
+                        <div class="health-item">
+                            <div class="health-icon success"><i class="fas fa-check-circle"></i></div>
+                            <div class="health-info">
+                                <div class="health-label">API Connection</div>
+                                <div class="health-status">Online</div>
+                            </div>
+                        </div>
+                        <div class="health-item">
+                            <div class="health-icon" id="mt5HealthIcon"><i class="fas fa-times-circle"></i></div>
+                            <div class="health-info">
+                                <div class="health-label">MT5 Broker</div>
+                                <div class="health-status" id="mt5HealthStatus">Disconnected</div>
+                            </div>
+                        </div>
+                        <div class="health-item">
+                            <div class="health-icon success"><i class="fas fa-database"></i></div>
+                            <div class="health-info">
+                                <div class="health-label">Data Storage</div>
+                                <div class="health-status">Healthy</div>
+                            </div>
+                        </div>
+                        <div class="health-item">
+                            <div class="health-icon success"><i class="fas fa-shield-alt"></i></div>
+                            <div class="health-info">
+                                <div class="health-label">Risk Manager</div>
+                                <div class="health-status">Active</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="risk-management glass-card reveal-up" data-delay="50">
+                    <div class="card-glow"></div>
+                    <h3><i class="fas fa-shield-alt"></i> Risk Management</h3>
+                    <div class="risk-meters">
+                        <div class="risk-meter">
+                            <div class="risk-label">Daily Risk Exposure</div>
+                            <div class="risk-bar">
+                                <div class="risk-fill" style="width: 0%;"></div>
+                            </div>
+                            <div class="risk-value">0% of max</div>
+                        </div>
+                        <div class="risk-meter">
+                            <div class="risk-label">Open Position Risk</div>
+                            <div class="risk-bar">
+                                <div class="risk-fill" style="width: 0%;"></div>
+                            </div>
+                            <div class="risk-value">No open positions</div>
+                        </div>
+                        <div class="risk-info">
+                            <i class="fas fa-info-circle"></i>
+                            <span>Risk limits enforced per strategy configuration</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Trades Preview -->
+            <div class="recent-trades glass-card reveal-up">
+                <div class="card-glow"></div>
+                <div class="trades-header">
+                    <h3><i class="fas fa-history"></i> Recent Trades</h3>
+                    <a href="#history" class="view-all-link" data-section="history">View All <i class="fas fa-arrow-right"></i></a>
+                </div>
+                <div class="trades-preview" id="recentTradesPreview">
+                    <div class="no-trades-yet">
+                        <i class="fas fa-inbox" style="font-size: 2rem; opacity: 0.3; margin-bottom: 8px;"></i>
+                        <div style="color: var(--z-text-3); font-size: 0.9rem;">No trades executed yet</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Market Overview -->
+            <div class="market-overview glass-card reveal-up">
+                <div class="card-glow"></div>
+                <h3><i class="fas fa-globe"></i> Market Overview</h3>
+                <div class="market-grid">
+                    <div class="market-pair">
+                        <div class="pair-info">
+                            <span class="pair-name">EUR/USD</span>
+                            <span class="pair-price">1.0842</span>
+                        </div>
+                        <span class="pair-change positive">+0.12%</span>
+                    </div>
+                    <div class="market-pair">
+                        <div class="pair-info">
+                            <span class="pair-name">GBP/USD</span>
+                            <span class="pair-price">1.2634</span>
+                        </div>
+                        <span class="pair-change positive">+0.08%</span>
+                    </div>
+                    <div class="market-pair">
+                        <div class="pair-info">
+                            <span class="pair-name">USD/JPY</span>
+                            <span class="pair-price">149.87</span>
+                        </div>
+                        <span class="pair-change negative">-0.15%</span>
+                    </div>
+                    <div class="market-pair">
+                        <div class="pair-info">
+                            <span class="pair-name">XAU/USD</span>
+                            <span class="pair-price">2,048</span>
+                        </div>
+                        <span class="pair-change positive">+0.34%</span>
+                    </div>
+                </div>
+                <div class="market-note">
+                    <i class="fas fa-clock"></i>
+                    <span>Market data refreshes every 5 seconds</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════════ BACKTEST RUNNER ═══════════ -->
+        <section id="backtest" class="dashboard-section">
+            <div class="section-header-dash">
+                <h2><i class="fas fa-flask"></i> Backtest Runner</h2>
+                <p>Watch your strategy trade on historical price data in real-time</p>
+            </div>
+
+            <!-- Quick-Start Guide -->
+            <div class="info-banner glass-card">
+                <div class="info-banner-icon"><i class="fas fa-lightbulb"></i></div>
+                <div class="info-banner-content">
+                    <strong>How it works:</strong> Select a symbol and time period, then hit <strong>Run</strong>. Zenith will replay historical candles and execute its strategy live — you'll see every entry, exit, SL and TP drawn on the chart in real time.
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="bt-controls glass-card">
+                <div class="bt-controls-row">
+                    <div class="bt-control">
+                        <label>Symbol</label>
+                        <select id="btSymbol" class="select-input">
+                            <option value="EURUSD">EURUSD</option>
+                            <option value="GBPUSD">GBPUSD</option>
+                            <option value="USDJPY">USDJPY</option>
+                            <option value="XAUUSD">XAUUSD</option>
+                            <option value="GBPJPY">GBPJPY</option>
+                            <option value="BTCUSD">BTCUSD</option>
+                            <option value="NAS100">NAS100</option>
+                        </select>
+                    </div>
+                    <div class="bt-control">
+                        <label>Period</label>
+                        <div class="bt-days-wrap">
+                            <input type="number" id="btDays" min="7" max="365" value="60" class="text-input" />
+                            <span class="bt-days-unit">days</span>
+                        </div>
+                    </div>
+                    <div class="bt-control">
+                        <label>Risk %</label>
+                        <div class="bt-days-wrap">
+                            <input type="number" id="btRiskPct" min="0.1" max="10" value="1.0" step="0.1" class="text-input" style="width:70px" />
+                            <span class="bt-days-unit">%</span>
+                        </div>
+                    </div>
+                    <div class="bt-control">
+                        <label>Playback Speed</label>
+                        <div class="speed-wrap">
+                            <span class="speed-label">Slow</span>
+                            <input type="range" id="btSpeed" min="1" max="100" value="40" class="speed-slider" />
+                            <span class="speed-label">Fast</span>
+                        </div>
+                    </div>
+                    <div class="bt-control bt-control-action">
+                        <button class="btn btn-glow" id="runBacktestBtn"><i class="fas fa-play"></i> Run Backtest</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bt-live-layout" id="btLiveLayout">
+                <!-- Chart Area (hidden until running) -->
+                <div class="bt-chart-area glass-card" id="btChartArea" style="display: none;">
+                    <div class="bt-chart-header">
+                        <div class="bt-chart-info">
+                            <span class="bt-symbol-badge" id="btChartSymbol">EURUSD</span>
+                            <span class="bt-timeframe-badge">M15</span>
+                            <span class="bt-balance-badge" id="btHeadBalance">$10,000.00</span>
+                            <span class="bt-progress" id="btProgress">0%</span>
+                        </div>
+                        <div class="bt-chart-controls">
+                            <button class="btn btn-sm btn-outline" id="btPauseBtn" title="Pause / Resume"><i class="fas fa-pause"></i></button>
+                            <button class="btn btn-sm btn-outline" id="btStopBtn" title="Skip to end"><i class="fas fa-forward-fast"></i></button>
+                        </div>
+                    </div>
+                    <div class="bt-chart-container" id="btChartContainer"></div>
+                </div>
+
+                <div class="bt-report glass-card" id="btReport" style="display: none;">
+                    <div class="bt-report-header">
+                        <h3><i class="fas fa-chart-line"></i> Backtest Report</h3>
+                        <span class="bt-report-sub" id="btReportMeta">Ready for screenshot</span>
+                    </div>
+
+                    <div class="bt-report-grid" id="btReportGrid">
+                        <div class="result-item"><span class="label">Trades</span><span class="value" id="btRepTrades">0</span></div>
+                        <div class="result-item"><span class="label">Win Rate</span><span class="value" id="btRepWinRate">0.00%</span></div>
+                        <div class="result-item"><span class="label">Total Profit</span><span class="value" id="btRepProfit">$0.00</span></div>
+                        <div class="result-item"><span class="label">Profit Factor</span><span class="value" id="btRepPF">0.00</span></div>
+                        <div class="result-item"><span class="label">Max Drawdown</span><span class="value" id="btRepDD">$0.00</span></div>
+                        <div class="result-item"><span class="label">Return</span><span class="value" id="btRepReturn">0.00%</span></div>
+                    </div>
+
+                    <div class="bt-report-equity">
+                        <h4><i class="fas fa-wave-square"></i> Equity Curve</h4>
+                        <div class="bt-equity-wrap">
+                            <canvas id="btEquityChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="bt-pairs-analytics">
+                        <h4><i class="fas fa-table"></i> Pair Analytics</h4>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Symbol</th>
+                                        <th>Trades</th>
+                                        <th>Win %</th>
+                                        <th>Profit</th>
+                                        <th>PF</th>
+                                        <th>Drawdown</th>
+                                        <th>Return %</th>
+                                        <th>Mode</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="btPairAnalyticsTable">
+                                    <tr><td colspan="8">Run a backtest to load analytics.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Backtest Strategy Info -->
+            <div class="bt-strategy-info glass-card">
+                <h3><i class="fas fa-brain"></i> Strategy Details</h3>
+                <div class="strategy-detail-grid">
+                    <div class="strategy-detail-item">
+                        <div class="strategy-detail-icon"><i class="fas fa-clock"></i></div>
+                        <div>
+                            <div class="strategy-detail-label">Timeframe</div>
+                            <div class="strategy-detail-value">M15 (15 minute)</div>
+                        </div>
+                    </div>
+                    <div class="strategy-detail-item">
+                        <div class="strategy-detail-icon"><i class="fas fa-crosshairs"></i></div>
+                        <div>
+                            <div class="strategy-detail-label">Entry Logic</div>
+                            <div class="strategy-detail-value">Multi-indicator confluence</div>
+                        </div>
+                    </div>
+                    <div class="strategy-detail-item">
+                        <div class="strategy-detail-icon"><i class="fas fa-shield-halved"></i></div>
+                        <div>
+                            <div class="strategy-detail-label">Risk per Trade</div>
+                            <div class="strategy-detail-value">1-2% of account</div>
+                        </div>
+                    </div>
+                    <div class="strategy-detail-item">
+                        <div class="strategy-detail-icon"><i class="fas fa-arrows-left-right-to-line"></i></div>
+                        <div>
+                            <div class="strategy-detail-label">SL / TP</div>
+                            <div class="strategy-detail-value">ATR-based dynamic</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Backtest Tips -->
+            <div class="bt-tips glass-card">
+                <h3><i class="fas fa-graduation-cap"></i> Backtest Tips</h3>
+                <div class="tips-grid">
+                    <div class="tip-item">
+                        <div class="tip-number">01</div>
+                        <div class="tip-content">
+                            <div class="tip-title">Use 60+ Days</div>
+                            <div class="tip-desc">Longer periods give more statistically significant results and reveal how the strategy handles different market regimes.</div>
+                        </div>
+                    </div>
+                    <div class="tip-item">
+                        <div class="tip-number">02</div>
+                        <div class="tip-content">
+                            <div class="tip-title">Test Multiple Pairs</div>
+                            <div class="tip-desc">A robust strategy performs well across correlated and uncorrelated instruments. Try EURUSD, XAUUSD, and NAS100.</div>
+                        </div>
+                    </div>
+                    <div class="tip-item">
+                        <div class="tip-number">03</div>
+                        <div class="tip-content">
+                            <div class="tip-title">Watch the Drawdown</div>
+                            <div class="tip-desc">Win rate alone means nothing — focus on max drawdown and profit factor. Aim for PF &gt; 1.5 and DD &lt; 15%.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Monte Carlo Simulation -->
+            <div class="mc-panel glass-card">
+                <div class="mc-header">
+                    <div>
+                        <h3><i class="fas fa-dice"></i> Monte Carlo Simulation</h3>
+                        <p>Stress-test your strategy by shuffling trade order across 200 iterations to gauge outcome stability</p>
+                    </div>
+                    <button class="btn btn-glow btn-sm" id="runMonteCarloBtn"><i class="fas fa-dice"></i> Run Simulation</button>
+                </div>
+
+                <!-- MC Explanation -->
+                <div class="mc-explainer">
+                    <div class="mc-explainer-item">
+                        <div class="mc-explainer-icon"><i class="fas fa-shuffle"></i></div>
+                        <div>
+                            <strong>What it does</strong>
+                            <p>Takes your backtest trades and randomly re-orders them 200 times, producing 200 different equity curves from the same trades.</p>
+                        </div>
+                    </div>
+                    <div class="mc-explainer-item">
+                        <div class="mc-explainer-icon"><i class="fas fa-chart-bar"></i></div>
+                        <div>
+                            <strong>Why it matters</strong>
+                            <p>Shows the range of possible outcomes. A tight distribution means consistent results regardless of trade order — a loose one signals luck-dependency.</p>
+                        </div>
+                    </div>
+                    <div class="mc-explainer-item">
+                        <div class="mc-explainer-icon"><i class="fas fa-bullseye"></i></div>
+                        <div>
+                            <strong>Key metrics</strong>
+                            <p>P10 (worst 10%), P50 (median), P90 (best 10%). If P10 is still profitable, your strategy is genuinely robust.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MC Results (hidden until simulation runs) -->
+                <div class="mc-results" id="mcResults" style="display: none;">
+                    <div class="mc-percentile-strip">
+                        <div class="mc-percentile mc-p10">
+                            <div class="mc-percentile-label">P10 <span class="mc-tag worst">Worst 10%</span></div>
+                            <div class="mc-percentile-value" id="mcP10">—</div>
+                            <div class="mc-percentile-bar">
+                                <div class="mc-bar-fill mc-bar-danger" id="mcP10Bar" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                        <div class="mc-percentile mc-p50">
+                            <div class="mc-percentile-label">P50 <span class="mc-tag median">Median</span></div>
+                            <div class="mc-percentile-value" id="mcP50">—</div>
+                            <div class="mc-percentile-bar">
+                                <div class="mc-bar-fill mc-bar-neutral" id="mcP50Bar" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                        <div class="mc-percentile mc-p90">
+                            <div class="mc-percentile-label">P90 <span class="mc-tag best">Best 10%</span></div>
+                            <div class="mc-percentile-value" id="mcP90">—</div>
+                            <div class="mc-percentile-bar">
+                                <div class="mc-bar-fill mc-bar-success" id="mcP90Bar" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mc-stats-row">
+                        <div class="mc-stat-box glass-card">
+                            <div class="mc-stat-icon"><i class="fas fa-arrows-down-to-line"></i></div>
+                            <div class="mc-stat-label">Avg Max Drawdown</div>
+                            <div class="mc-stat-value negative" id="mcAvgDD">—</div>
+                        </div>
+                        <div class="mc-stat-box glass-card">
+                            <div class="mc-stat-icon"><i class="fas fa-repeat"></i></div>
+                            <div class="mc-stat-label">Iterations</div>
+                            <div class="mc-stat-value" id="mcIterations">200</div>
+                        </div>
+                        <div class="mc-stat-box glass-card">
+                            <div class="mc-stat-icon"><i class="fas fa-chart-line"></i></div>
+                            <div class="mc-stat-label">Base Profit</div>
+                            <div class="mc-stat-value" id="mcBaseProfit">—</div>
+                        </div>
+                        <div class="mc-stat-box glass-card">
+                            <div class="mc-stat-icon"><i class="fas fa-shield-check"></i></div>
+                            <div class="mc-stat-label">Verdict</div>
+                            <div class="mc-stat-value" id="mcVerdict">—</div>
+                        </div>
+                    </div>
+
+                    <!-- Distribution Histogram -->
+                    <div class="mc-distrib">
+                        <h4><i class="fas fa-chart-column"></i> Balance Distribution</h4>
+                        <div class="mc-histogram" id="mcHistogram">
+                            <!-- Bars generated by JS -->
+                        </div>
+                        <div class="mc-histogram-axis">
+                            <span id="mcHistMin">$0</span>
+                            <span>Ending Balance</span>
+                            <span id="mcHistMax">$0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MC Loading State -->
+                <div class="mc-loading" id="mcLoading" style="display: none;">
+                    <div class="mc-loading-spinner"></div>
+                    <div class="mc-loading-text">Running 200 iterations...</div>
+                    <div class="mc-loading-sub">Shuffling trade order and building equity curves</div>
+                </div>
+
+                <!-- MC Empty State -->
+                <div class="mc-empty" id="mcEmpty">
+                    <div class="empty-state-icon"><i class="fas fa-dice"></i></div>
+                    <div class="empty-state-title">No Simulation Data</div>
+                    <div class="empty-state-desc">Run a backtest first, then click <strong>"Run Simulation"</strong> to stress-test the results with Monte Carlo analysis.</div>
+                </div>
+            </div>
+
+            <div class="form-status" id="btStatus"></div>
+        </section>
+
+        <!-- ═══════════ ROBUSTNESS ═══════════ -->
+        <section id="robustness" class="dashboard-section">
+            <div class="section-header-dash">
+                <h2><i class="fas fa-shield-halved"></i> Robustness Analysis</h2>
+                <p>Overfitting detection &amp; multi-mode validation summary</p>
+            </div>
+
+            <div class="robust-card glass-card">
+                <div id="robustnessResult">
+                    <div class="empty-state-block">
+                        <div class="empty-state-icon"><i class="fas fa-shield-halved"></i></div>
+                        <div class="empty-state-title">No Robustness Data Yet</div>
+                        <div class="empty-state-desc">Run a backtest first — Zenith will automatically analyse walk-forward consistency, split-sample validation, and overfitting risk.</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════════ MT5 CONNECTION ═══════════ -->
+        <section id="mt5" class="dashboard-section">
+            <div class="section-header-dash">
+                <h2><i class="fas fa-plug"></i> MT5 Connection</h2>
+                <p>Connect your MetaTrader 5 broker account for live automated trading</p>
+            </div>
+
+            <!-- Connection Status Banner -->
+            <div class="mt5-status-banner glass-card" id="mt5StatusBanner">
+                <div class="mt5-status-icon disconnected" id="mt5StatusIcon">
+                    <i class="fas fa-plug-circle-xmark"></i>
+                </div>
+                <div class="mt5-status-info">
+                    <div class="mt5-status-title" id="mt5StatusTitle">Not Connected</div>
+                    <div class="mt5-status-subtitle" id="mt5StatusSubtitle">Enter your broker credentials below to connect</div>
+                </div>
+                <div class="mt5-status-badge disconnected" id="mt5StatusBadge">
+                    <span class="status-dot"></span> Offline
+                </div>
+            </div>
+
+            <!-- Connection Form -->
+            <div class="form-card glass-card">
+                <div class="info-banner-mini">
+                    <i class="fas fa-info-circle"></i>
+                    <span>This connects Zenith to your <strong>MT5 broker account</strong> to execute real trades automatically. Your broker provides these credentials when you open an account. Leave empty if you only want to use the backtester.</span>
+                </div>
+
+                <div class="form-group-grid">
+                    <div class="form-group">
+                        <label><i class="fas fa-hashtag" style="color:var(--z-green);margin-right:6px;font-size:0.75rem;"></i>Account Number</label>
+                        <input id="mt5Account" type="text" class="text-input" placeholder="e.g. 51234567" />
+                        <span class="form-hint">Your broker account number</span>
+                    </div>
+                    <div class="form-group">
+                        <label><i class="fas fa-server" style="color:var(--z-cyan);margin-right:6px;font-size:0.75rem;"></i>Server</label>
+                        <input id="mt5Server" type="text" class="text-input" placeholder="e.g. MetaQuotes-Demo" />
+                        <span class="form-hint">Broker server name</span>
+                    </div>
+                    <div class="form-group">
+                        <label><i class="fas fa-lock" style="color:var(--z-purple);margin-right:6px;font-size:0.75rem;"></i>Password</label>
+                        <input id="mt5Login" type="password" class="text-input" placeholder="••••••••" />
+                        <span class="form-hint">Your broker account password</span>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button class="btn btn-glow" id="mt5ConnectBtn"><i class="fas fa-link"></i> Save &amp; Connect</button>
+                    <button class="btn btn-outline" id="mt5DisconnectBtn"><i class="fas fa-unlink"></i> Disconnect</button>
+                </div>
+
+                <div class="form-status" id="mt5Status"></div>
+            </div>
+
+            <!-- MT5 Feature Grid -->
+            <div class="mt5-features-grid">
+                <div class="mt5-feature-card glass-card">
+                    <div class="mt5-feature-icon"><i class="fas fa-bolt"></i></div>
+                    <h4>Auto Execution</h4>
+                    <p>Trades are placed automatically when the strategy detects a valid signal — no manual intervention needed.</p>
+                </div>
+                <div class="mt5-feature-card glass-card">
+                    <div class="mt5-feature-icon"><i class="fas fa-shield-alt"></i></div>
+                    <h4>Risk Management</h4>
+                    <p>Every trade uses dynamic SL/TP based on ATR. Position sizing respects your configured risk percentage.</p>
+                </div>
+                <div class="mt5-feature-card glass-card">
+                    <div class="mt5-feature-icon"><i class="fas fa-clock-rotate-left"></i></div>
+                    <h4>24/5 Monitoring</h4>
+                    <p>Zenith watches the markets around the clock during trading hours. Positions are managed even if you're away.</p>
+                </div>
+                <div class="mt5-feature-card glass-card">
+                    <div class="mt5-feature-icon"><i class="fas fa-lock"></i></div>
+                    <h4>Secure Storage</h4>
+                    <p>Your credentials are stored locally on your machine — never sent to external servers or third parties.</p>
+                </div>
+            </div>
+
+            <!-- Setup Steps -->
+            <div class="mt5-setup-steps glass-card">
+                <h3><i class="fas fa-list-check"></i> Quick Setup Guide</h3>
+                <div class="setup-steps">
+                    <div class="setup-step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <div class="step-title">Open a Broker Account</div>
+                            <div class="step-desc">Sign up with any MT5-supported broker (e.g. ICMarkets, Pepperstone, FTMO, etc).</div>
+                        </div>
+                    </div>
+                    <div class="setup-step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <div class="step-title">Get Your Credentials</div>
+                            <div class="step-desc">From your broker's email or dashboard, find your account number, server name, and password.</div>
+                        </div>
+                    </div>
+                    <div class="setup-step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <div class="step-title">Enter &amp; Connect</div>
+                            <div class="step-desc">Paste the credentials above and click "Save & Connect". Zenith will verify the connection instantly.</div>
+                        </div>
+                    </div>
+                    <div class="setup-step">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <div class="step-title">Start Trading</div>
+                            <div class="step-desc">Hit the <strong>Play</strong> button on the top bar. Zenith will begin scanning for trade setups automatically.</div>
                         </div>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- Trading Section -->
-        <section id="trading" class="dashboard-section">
-            <h2 class="section-title">Active Strategies</h2>
-            <div class="strategies-list">
-                <div class="strategy-item">
-                    <div class="strategy-info">
-                        <div class="strategy-icon-container gradient-bg-1">
-                            <i class="fas fa-network-wired"></i>
-                        </div>
-                        <div>
-                            <h4>BTCUSD Grid Trading</h4>
-                            <p>15 levels, ATR spacing, M5 timeframe</p>
-                        </div>
-                    </div>
-                    <div class="strategy-metrics">
-                        <div class="metric-small">
-                            <span>PnL</span>
-                            <strong class="positive">+$418M</strong>
-                        </div>
-                        <div class="metric-small">
-                            <span>Trades</span>
-                            <strong>2,207</strong>
-                        </div>
-                        <div class="metric-small">
-                            <span>Win Rate</span>
-                            <strong>75.2%</strong>
-                        </div>
-                    </div>
-                    <div class="strategy-actions">
-                        <button class="btn btn-sm btn-outline" onclick="toggleStrategy('btc')">
-                            <i class="fas fa-pause"></i>
-                        </button>
-                        <button class="btn btn-sm btn-outline" onclick="configureStrategy('btc')">
-                            <i class="fas fa-cog"></i>
-                        </button>
+        <!-- ═══════════ BACKTEST RUNS ═══════════ -->
+        <section id="runs" class="dashboard-section">
+            <div class="section-header-dash">
+                <h2><i class="fas fa-history"></i> Backtest Runs</h2>
+                <p>View all completed and in-progress backtests with detailed results</p>
+            </div>
+
+            <!-- Runs Summary Stats -->
+            <div class="runs-summary-strip">
+                <div class="runs-summary-card glass-card">
+                    <div class="runs-summary-icon"><i class="fas fa-flask"></i></div>
+                    <div>
+                        <div class="runs-summary-value" id="totalRunsCount">0</div>
+                        <div class="runs-summary-label">Total Runs</div>
                     </div>
                 </div>
-                <div class="strategy-item">
-                    <div class="strategy-info">
-                        <div class="strategy-icon-container gradient-bg-2">
-                            <i class="fas fa-network-wired"></i>
-                        </div>
-                        <div>
-                            <h4>EURUSD Grid Trading</h4>
-                            <p>15 levels, ATR spacing, M5 timeframe</p>
-                        </div>
+                <div class="runs-summary-card glass-card">
+                    <div class="runs-summary-icon success"><i class="fas fa-check-circle"></i></div>
+                    <div>
+                        <div class="runs-summary-value" id="completedRunsCount">0</div>
+                        <div class="runs-summary-label">Completed</div>
                     </div>
-                    <div class="strategy-metrics">
-                        <div class="metric-small">
-                            <span>PnL</span>
-                            <strong class="positive">+$151K</strong>
-                        </div>
-                        <div class="metric-small">
-                            <span>Trades</span>
-                            <strong>319</strong>
-                        </div>
-                        <div class="metric-small">
-                            <span>Win Rate</span>
-                            <strong>87.5%</strong>
-                        </div>
+                </div>
+                <div class="runs-summary-card glass-card">
+                    <div class="runs-summary-icon running"><i class="fas fa-spinner fa-spin"></i></div>
+                    <div>
+                        <div class="runs-summary-value" id="runningRunsCount">0</div>
+                        <div class="runs-summary-label">Running</div>
                     </div>
-                    <div class="strategy-actions">
-                        <button class="btn btn-sm btn-outline" onclick="toggleStrategy('eur')">
-                            <i class="fas fa-pause"></i>
-                        </button>
-                        <button class="btn btn-sm btn-outline" onclick="configureStrategy('eur')">
-                            <i class="fas fa-cog"></i>
-                        </button>
+                </div>
+                <div class="runs-summary-card glass-card">
+                    <div class="runs-summary-icon"><i class="fas fa-chart-simple"></i></div>
+                    <div>
+                        <div class="runs-summary-value" id="bestRunPF">—</div>
+                        <div class="runs-summary-label">Best PF</div>
                     </div>
                 </div>
             </div>
-        </section>
 
-        <!-- Positions Section -->
-        <section id="positions" class="dashboard-section">
-            <h2 class="section-title">Open Positions</h2>
-            <div class="table-container">
+            <!-- Runs Table -->
+            <div class="table-card glass-card">
+                <div class="table-toolbar">
+                    <div class="table-toolbar-left">
+                        <h3><i class="fas fa-table"></i> All Runs</h3>
+                    </div>
+                    <div class="table-toolbar-right">
+                        <a href="#backtest" class="btn btn-outline btn-sm" data-section="backtest"><i class="fas fa-plus"></i> New Backtest</a>
+                    </div>
+                </div>
                 <table class="data-table">
                     <thead>
                         <tr>
+                            <th>Run ID</th>
                             <th>Symbol</th>
-                            <th>Side</th>
-                            <th>Size</th>
-                            <th>Entry</th>
-                            <th>Current</th>
-                            <th>PnL</th>
-                            <th>Actions</th>
+                            <th>Mode</th>
+                            <th>Status</th>
+                            <th>Date</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
-                    <tbody id="positionsTable">
-                        <tr>
-                            <td><strong>BTCUSD</strong></td>
-                            <td><span class="badge badge-success">BUY</span></td>
-                            <td>0.01</td>
-                            <td>$87,941.78</td>
-                            <td>$88,242.59</td>
-                            <td class="positive">+$30.08</td>
-                            <td>
-                                <button class="btn btn-sm btn-outline">Close</button>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td><strong>EURUSD</strong></td>
-                            <td><span class="badge badge-danger">SELL</span></td>
-                            <td>1.0</td>
-                            <td>1.17559</td>
-                            <td>1.17409</td>
-                            <td class="positive">+$150.00</td>
-                            <td>
-                                <button class="btn btn-sm btn-outline">Close</button>
+                    <tbody id="runsTable">
+                        <tr class="empty-state-row">
+                            <td colspan="6">
+                                <div class="empty-state-block">
+                                    <div class="empty-state-icon"><i class="fas fa-flask"></i></div>
+                                    <div class="empty-state-title">No Backtest Runs Yet</div>
+                                    <div class="empty-state-desc">Head to the <strong>Backtest</strong> section and run your first strategy test to see results here.</div>
+                                </div>
                             </td>
                         </tr>
                     </tbody>
                 </table>
             </div>
+
+            <!-- Run Detail Panel (populated by JS) -->
+            <div class="run-detail-panel glass-card" id="runDetailPanel" style="display: none;">
+                <h3><i class="fas fa-chart-pie"></i> Run Details</h3>
+                <div id="runDetailContent"></div>
+            </div>
         </section>
 
-        <!-- History Section -->
+        <!-- ═══════════ TRADE HISTORY ═══════════ -->
         <section id="history" class="dashboard-section">
-            <h2 class="section-title">Trade History</h2>
-            <div class="table-container">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Time</th>
-                            <th>Symbol</th>
-                            <th>Side</th>
-                            <th>Size</th>
-                            <th>Entry</th>
-                            <th>Exit</th>
-                            <th>PnL</th>
-                            <th>Return</th>
-                        </tr>
-                    </thead>
-                    <tbody id="historyTable">
-                        <!-- Will be populated by JavaScript -->
-                    </tbody>
-                </table>
+            <div class="section-header-dash">
+                <h2><i class="fas fa-list"></i> Trade History</h2>
+                <p>All executed trades from live sessions and backtests</p>
+            </div>
+
+            <!-- History Summary -->
+            <div class="history-summary-strip">
+                <div class="history-summary-card glass-card">
+                    <div class="history-summary-icon"><i class="fas fa-exchange-alt"></i></div>
+                    <div>
+                        <div class="history-summary-value" id="histTotalTrades">0</div>
+                        <div class="history-summary-label">Total Trades</div>
+                    </div>
+                </div>
+                <div class="history-summary-card glass-card">
+                    <div class="history-summary-icon success"><i class="fas fa-trophy"></i></div>
+                    <div>
+                        <div class="history-summary-value" id="histWinRate">0%</div>
+                        <div class="history-summary-label">Win Rate</div>
+                    </div>
+                </div>
+                <div class="history-summary-card glass-card">
+                    <div class="history-summary-icon profit"><i class="fas fa-dollar-sign"></i></div>
+                    <div>
+                        <div class="history-summary-value" id="histTotalPnl">$0.00</div>
+                        <div class="history-summary-label">Total P&amp;L</div>
+                    </div>
+                </div>
+                <div class="history-summary-card glass-card">
+                    <div class="history-summary-icon"><i class="fas fa-scale-balanced"></i></div>
+                    <div>
+                        <div class="history-summary-value" id="histAvgReturn">0.00%</div>
+                        <div class="history-summary-label">Avg Return</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- History Table -->
+            <div class="table-card glass-card">
+                <div class="table-toolbar">
+                    <div class="table-toolbar-left">
+                        <h3><i class="fas fa-scroll"></i> Trade Log</h3>
+                        <span class="table-subtitle">Last 50 trades from all sessions</span>
+                    </div>
+                </div>
+                <div class="table-scroll-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Symbol</th>
+                                <th>Type</th>
+                                <th>Qty</th>
+                                <th>Entry</th>
+                                <th>Exit</th>
+                                <th>P&amp;L</th>
+                                <th>Return</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyTable">
+                            <tr class="empty-state-row">
+                                <td colspan="8">
+                                    <div class="empty-state-block">
+                                        <div class="empty-state-icon"><i class="fas fa-inbox"></i></div>
+                                        <div class="empty-state-title">No Trades Yet</div>
+                                        <div class="empty-state-desc">Start the bot or run a backtest to see your trades logged here with full entry/exit details.</div>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </section>
     </main>
 
+    <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="js/main.js"></script>
-    <script src="js/dashboard.js"></script>
-    <script src="js/dashboard-api.js"></script>
+    <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="js/main.js?v=20260226-1"></script>
+    <script src="js/dashboard-app.js?v=20260226-1"></script>
 </body>
 </html>

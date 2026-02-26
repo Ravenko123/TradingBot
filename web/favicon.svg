@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" fill="none">
+  <defs>
+    <linearGradient id="zenithFavGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00ff87"/>
+      <stop offset="100%" stop-color="#66ffb7"/>
+    </linearGradient>
+  </defs>
+  <path d="M20 4L36 12V28L20 36L4 28V12L20 4Z" stroke="url(#zenithFavGrad)" stroke-width="2"/>
+  <path d="M20 10L30 16V26L20 32L10 26V16L20 10Z" fill="url(#zenithFavGrad)" opacity="0.18"/>
+  <path d="M12 20L18 14L24 22L32 12" stroke="url(#zenithFavGrad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

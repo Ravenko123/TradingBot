@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile — Zenith Trading Bot</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260225-2">
+    <link rel="shortcut icon" href="/favicon.svg?v=20260225-2">
+    <link rel="apple-touch-icon" href="/favicon.svg?v=20260225-2">
+    <link rel="stylesheet" href="css/style.css?v=20260226-3">
+    <link rel="stylesheet" href="css/dashboard.css?v=20260224-18">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="dashboard-body">
+
+    <!-- Sidebar -->
+    <aside class="sidebar glass-card">
+        <div class="sidebar-header">
+            <a href="index.html" class="nav-brand">
+                <div class="brand-icon">
+                    <svg viewBox="0 0 40 40" fill="none">
+                        <path d="M20 4L36 12V28L20 36L4 28V12L20 4Z" stroke="url(#dbg)" stroke-width="2" fill="none"/>
+                        <path d="M20 10L30 16V26L20 32L10 26V16L20 10Z" fill="url(#dbg)" opacity="0.15"/>
+                        <path d="M12 20L18 14L24 22L32 12" stroke="url(#dbg)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <defs><linearGradient id="dbg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#00ff87"/><stop offset="100%" stop-color="#60efff"/></linearGradient></defs>
+                    </svg>
+                </div>
+                <span class="brand-text">Zenith</span>
+            </a>
+        </div>
+
+        <nav class="sidebar-nav">
+            <a href="dashboard.html#overview" class="sidebar-link"><i class="fas fa-chart-bar"></i><span>Dashboard</span></a>
+            <a href="dashboard.html#backtest" class="sidebar-link"><i class="fas fa-flask"></i><span>Backtest</span></a>
+            <a href="dashboard.html#mt5" class="sidebar-link"><i class="fas fa-plug"></i><span>MT5</span></a>
+            <a href="dashboard.html#runs" class="sidebar-link"><i class="fas fa-list"></i><span>Runs</span></a>
+            <a href="dashboard.html#history" class="sidebar-link"><i class="fas fa-history"></i><span>Trades</span></a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <a href="profile.html" class="sidebar-link active"><i class="fas fa-user"></i><span>Profile</span></a>
+            <a href="index.html" class="sidebar-link"><i class="fas fa-home"></i><span>Home</span></a>
+            <button id="logoutBtn" class="sidebar-link" style="border: none; background: none; width: 100%; text-align: left; padding: 12px 16px; cursor: pointer;"><i class="fas fa-sign-out-alt"></i><span>Logout</span></button>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="dashboard-main">
+        <!-- Top Bar -->
+        <div class="top-bar glass-card">
+            <div class="top-bar-left">
+                <h1>Profile</h1>
+                <span class="section-timestamp">Manage your account</span>
+            </div>
+            <div class="top-bar-right">
+                <a href="dashboard.html" class="btn btn-outline btn-sm" title="Back to dashboard"><i class="fas fa-arrow-left"></i></a>
+            </div>
+        </div>
+
+        <!-- Profile Section -->
+        <section class="dashboard-section">
+            <div class="profile-grid">
+                <!-- User Info Card -->
+                <div class="profile-card glass-card reveal-up">
+                    <div class="card-glow"></div>
+                    <h2><i class="fas fa-user-circle"></i> Account Information</h2>
+                    <div class="profile-info">
+                        <div class="info-row">
+                            <span class="info-label">Email</span>
+                            <span class="info-value" id="profileEmail">user@example.com</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Account Created</span>
+                            <span class="info-value" id="profileCreated">Jan 1, 2024</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Last Login</span>
+                            <span class="info-value" id="profileLastLogin">Just now</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Account Status</span>
+                            <span class="info-value"><span class="status-badge active">Active</span></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Statistics Card -->
+                <div class="profile-card glass-card reveal-up" data-delay="100">
+                    <div class="card-glow"></div>
+                    <h2><i class="fas fa-chart-bar"></i> Statistics</h2>
+                    <div class="profile-stats">
+                        <div class="stat-row">
+                            <span class="stat-label">Total Backtests</span>
+                            <span class="stat-value" id="statBacktests">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Total Trades</span>
+                            <span class="stat-value" id="statTrades">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Win Rate (Overall)</span>
+                            <span class="stat-value" id="statWinRate">0%</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Total P&L</span>
+                            <span class="stat-value" id="statPnL">$0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Preferences Card -->
+                <div class="profile-card glass-card reveal-up" data-delay="200">
+                    <div class="card-glow"></div>
+                    <h2><i class="fas fa-cog"></i> Settings</h2>
+                    <div class="settings-group">
+                        <label class="setting-item">
+                            <input type="checkbox" checked disabled />
+                            <span>Email Notifications</span>
+                        </label>
+                        <label class="setting-item">
+                            <input type="checkbox" checked disabled />
+                            <span>Trade Alerts</span>
+                        </label>
+                        <label class="setting-item">
+                            <input type="checkbox" disabled />
+                            <span>Dark Mode</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Danger Zone -->
+                <div class="profile-card glass-card danger reveal-up" data-delay="300">
+                    <div class="card-glow"></div>
+                    <h2><i class="fas fa-exclamation-triangle"></i> Danger Zone</h2>
+                    <p style="color: #8b92a7; margin-bottom: 16px;">Irreversible actions</p>
+                    <button class="btn btn-danger" id="resetBtn"><i class="fas fa-redo"></i> Reset Statistics</button>
+                    <button class="btn btn-danger" id="deleteBtn" style="margin-top: 8px;"><i class="fas fa-trash"></i> Delete Account</button>
+                </div>
+            </div>
+
+            <!-- Change Password -->
+            <div class="form-card glass-card reveal-up" data-delay="150">
+                <h2><i class="fas fa-lock"></i> Change Password</h2>
+                <div class="form-group-grid">
+                    <div class="form-group">
+                        <label>Current Password</label>
+                        <input type="password" id="currentPass" class="text-input" />
+                    </div>
+                    <div class="form-group">
+                        <label>New Password</label>
+                        <input type="password" id="newPass" class="text-input" />
+                    </div>
+                    <div class="form-group">
+                        <label>Confirm Password</label>
+                        <input type="password" id="confirmPass" class="text-input" />
+                    </div>
+                </div>
+                <button class="btn btn-glow" id="changePassBtn"><i class="fas fa-check"></i> Update Password</button>
+                <div class="form-status" id="passStatus"></div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Scripts -->
+    <script src="js/main.js?v=20260224-12"></script>
+    <script>
+        const PROFILE_API_BASE = 'http://localhost:5000/api';
+
+        function getProfileToken() {
+            return localStorage.getItem('zenith_token') || localStorage.getItem('ultima_token');
+        }
+
+        async function profileApiFetch(path, options = {}) {
+            const token = getProfileToken();
+            const headers = Object.assign({}, options.headers || {});
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+
+            try {
+                const res = await fetch(`${PROFILE_API_BASE}${path}`, { ...options, headers });
+                if (!res.ok) return null;
+                return await res.json();
+            } catch (_) {
+                return null;
+            }
+        }
+
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            localStorage.removeItem('zenith_token');
+            localStorage.removeItem('ultima_token');
+            window.location.href = 'login.html';
+        });
+
+        document.getElementById('changePassBtn').addEventListener('click', () => {
+            const statusEl = document.getElementById('passStatus');
+            const pass1 = document.getElementById('newPass').value;
+            const pass2 = document.getElementById('confirmPass').value;
+            if (pass1 !== pass2) {
+                statusEl.style.color = '#ff6b6b';
+                statusEl.textContent = 'Passwords do not match';
+                return;
+            }
+            statusEl.style.color = '#00ff87';
+            statusEl.textContent = 'Password updated successfully!';
+            setTimeout(() => statusEl.textContent = '', 3000);
+        });
+
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            if (confirm('Reset all statistics? This cannot be undone.')) {
+                alert('Statistics reset successfully!');
+            }
+        });
+
+        document.getElementById('deleteBtn').addEventListener('click', () => {
+            if (confirm('Are you sure? This will delete your account permanently.')) {
+                if (confirm('This is your last warning!')) {
+                    localStorage.removeItem('zenith_token');
+                    window.location.href = 'index.html';
+                }
+            }
+        });
+
+        // Load profile data
+        async function initProfile() {
+            const emailEl = document.getElementById('profileEmail');
+            const createdEl = document.getElementById('profileCreated');
+            const lastLoginEl = document.getElementById('profileLastLogin');
+            const backtestsEl = document.getElementById('statBacktests');
+            const tradesEl = document.getElementById('statTrades');
+            const winRateEl = document.getElementById('statWinRate');
+            const pnlEl = document.getElementById('statPnL');
+
+            const emailFallback = localStorage.getItem('zenith_email') || localStorage.getItem('ultima_email') || 'Not available';
+            emailEl.textContent = emailFallback;
+            createdEl.textContent = '—';
+            lastLoginEl.textContent = new Date().toLocaleString();
+
+            const me = await profileApiFetch('/auth/me');
+            if (me) {
+                const email = me.email || me.user?.email || emailFallback;
+                const created = me.created_at || me.user?.created_at || me.createdAt || me.user?.createdAt;
+                const lastLogin = me.last_login || me.user?.last_login || me.lastLogin || me.user?.lastLogin;
+
+                if (email) emailEl.textContent = email;
+                if (created) {
+                    const cd = new Date(created);
+                    if (!Number.isNaN(cd.getTime())) createdEl.textContent = cd.toLocaleDateString();
+                }
+                if (lastLogin) {
+                    const ld = new Date(lastLogin);
+                    if (!Number.isNaN(ld.getTime())) lastLoginEl.textContent = ld.toLocaleString();
+                }
+            }
+
+            const metrics = await profileApiFetch('/metrics');
+            if (metrics) {
+                const totalTrades = Number(metrics.total_trades || 0);
+                const winRate = Number(metrics.win_rate || 0);
+                const pnlValue = Number(metrics.total_profit ?? metrics.pnl ?? 0);
+
+                tradesEl.textContent = String(totalTrades);
+                winRateEl.textContent = `${winRate.toFixed(1)}%`;
+                pnlEl.textContent = `${pnlValue >= 0 ? '+' : '-'}$${Math.abs(pnlValue).toFixed(2)}`;
+                pnlEl.classList.toggle('positive', pnlValue >= 0);
+                pnlEl.classList.toggle('negative', pnlValue < 0);
+            }
+
+            const runs = await profileApiFetch('/runs');
+            if (runs && Array.isArray(runs)) {
+                backtestsEl.textContent = String(runs.length);
+            } else {
+                backtestsEl.textContent = '0';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initProfile();
+        });
+    </script>
+</body>
+</html>

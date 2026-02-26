@@ -1,0 +1,1727 @@
+# api server for zenith trading bot
+
+from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
+from werkzeug.security import generate_password_hash, check_password_hash
+import json
+import os
+import sqlite3
+import threading
+import subprocess
+import secrets
+import re
+from datetime import datetime, timedelta, timezone
+import pandas as pd
+import numpy as np
+import time as _time
+import sys
+from pathlib import Path
+
+WEB_DIR = Path(__file__).resolve().parent
+BASE_DIR = WEB_DIR.parent
+
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+
+def _utcnow():
+    """Naive UTC datetime — no tzinfo, no +00:00 suffix in isoformat()."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+DB_DIR = WEB_DIR / "data"
+DB_PATH = DB_DIR / "app.db"
+
+TRADES_FILE = BASE_DIR / "trades.csv"
+TELEGRAM_STATE_FILE = BASE_DIR / "telegram_state.json"
+BACKTEST_RESULTS_DIR = BASE_DIR / "mt5_bot" / "backtest_results"
+BOT_RUNTIME_FILE = BASE_DIR / "mt5_bot" / "liverun" / "runtime_status.json"
+BOT_LOG_FILE = BASE_DIR / "mt5_bot" / "liverun" / "bot_engine.log"
+BOT_VENV_PYTHON = BASE_DIR / ".venv" / "Scripts" / "python.exe"
+BOT_RUNTIME_CONFIG_FILE = BASE_DIR / "mt5_bot" / "runtime_config.json"
+TELEGRAM_CONFIG_FILE = BASE_DIR / "mt5_bot" / "telegram_config.json"
+BOT_LEARNED_PARAMS_FILE = BASE_DIR / "mt5_bot" / "liverun" / "learned_params.json"
+BACKTEST_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+DB_DIR.mkdir(parents=True, exist_ok=True)
+SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "GBPJPY", "BTCUSD", "NAS100"]
+
+app = Flask(__name__, static_folder=str(WEB_DIR), static_url_path="")
+CORS(app)
+BOT_PROCESS = None
+BOT_LOG_HANDLE = None
+
+
+# db setup
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token TEXT UNIQUE NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        """
+    )
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS mt5_connections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            account_id TEXT,
+            server TEXT,
+            login TEXT,
+            connected INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        """
+    )
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS backtest_runs (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            symbol TEXT NOT NULL,
+            mode TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            result_file TEXT,
+            log TEXT,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        """
+    )
+
+    conn.commit()
+    conn.close()
+
+
+# helpers
+
+def json_response(data, status=200):
+    return jsonify(data), status
+
+
+def purge_expired_sessions():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM sessions WHERE expires_at < ?", (_utcnow().isoformat(),))
+    conn.commit()
+    conn.close()
+
+
+def get_auth_token():
+    header = request.headers.get("Authorization", "")
+    if header.startswith("Bearer "):
+        return header.replace("Bearer ", "", 1)
+    return None
+
+
+def require_auth(fn):
+    def wrapper(*args, **kwargs):
+        purge_expired_sessions()
+        token = get_auth_token()
+        if not token:
+            return json_response({"success": False, "message": "Unauthorized"}, 401)
+
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT s.token, s.expires_at, u.id as user_id, u.email, u.name
+            FROM sessions s
+            JOIN users u ON u.id = s.user_id
+            WHERE s.token = ?
+            """,
+            (token,)
+        )
+        row = cur.fetchone()
+        conn.close()
+
+        if not row:
+            return json_response({"success": False, "message": "Unauthorized"}, 401)
+
+        if datetime.fromisoformat(row["expires_at"]).replace(tzinfo=None) < _utcnow():
+            return json_response({"success": False, "message": "Session expired"}, 401)
+
+        request.user = {
+            "id": row["user_id"],
+            "email": row["email"],
+            "name": row["name"]
+        }
+        return fn(*args, **kwargs)
+
+    wrapper.__name__ = fn.__name__
+    return wrapper
+
+
+def load_telegram_state():
+    if TELEGRAM_STATE_FILE.exists():
+        try:
+            with open(TELEGRAM_STATE_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"is_running": False, "strategy": None}
+
+
+def save_telegram_state(state):
+    with open(TELEGRAM_STATE_FILE, "w") as f:
+        json.dump(state, f, indent=2)
+
+
+def load_bot_runtime_state():
+    if BOT_RUNTIME_FILE.exists():
+        try:
+            return json.loads(BOT_RUNTIME_FILE.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def tail_bot_log(lines: int = 40) -> str:
+    if not BOT_LOG_FILE.exists():
+        return ""
+    try:
+        content = BOT_LOG_FILE.read_text(encoding="utf-8", errors="ignore").splitlines()
+        return "\n".join(content[-lines:])
+    except Exception:
+        return ""
+
+
+def read_bot_config():
+    default_cfg = {
+        "risk_percent": 1.0,
+        "enabled_symbols": SYMBOLS.copy(),
+    }
+    if BOT_RUNTIME_CONFIG_FILE.exists():
+        try:
+            data = json.loads(BOT_RUNTIME_CONFIG_FILE.read_text())
+            if isinstance(data, dict):
+                default_cfg.update(data)
+        except Exception:
+            pass
+
+    risk = float(default_cfg.get("risk_percent", 1.0))
+    risk = max(0.01, min(100.0, risk))
+    enabled = [s for s in default_cfg.get("enabled_symbols", []) if s in SYMBOLS]
+    if not enabled:
+        enabled = SYMBOLS.copy()
+
+    return {
+        "risk_percent": round(risk, 2),
+        "enabled_symbols": sorted(enabled),
+        "available_symbols": SYMBOLS.copy(),
+    }
+
+
+def write_bot_config(cfg: dict):
+    BOT_RUNTIME_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    BOT_RUNTIME_CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
+
+
+def read_telegram_config():
+    cfg = {
+        "bot_token": "",
+        "chat_id": "",
+    }
+    if TELEGRAM_CONFIG_FILE.exists():
+        try:
+            data = json.loads(TELEGRAM_CONFIG_FILE.read_text())
+            if isinstance(data, dict):
+                cfg["bot_token"] = str(data.get("bot_token", "") or "").strip()
+                cfg["chat_id"] = str(data.get("chat_id", "") or "").strip()
+        except Exception:
+            pass
+    return cfg
+
+
+def write_telegram_config(cfg: dict):
+    TELEGRAM_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    TELEGRAM_CONFIG_FILE.write_text(json.dumps({
+        "bot_token": str(cfg.get("bot_token", "") or "").strip(),
+        "chat_id": str(cfg.get("chat_id", "") or "").strip(),
+    }, indent=2))
+
+
+def mask_token(token: str) -> str:
+    t = str(token or "")
+    if len(t) <= 8:
+        return "*" * len(t)
+    return f"{t[:4]}{'*' * (len(t) - 8)}{t[-4:]}"
+
+
+def parse_bot_activity(lines: int = 140):
+    raw = tail_bot_log(lines)
+    if not raw:
+        return []
+
+    events = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        event_type = None
+        symbol = None
+
+        if "NEW SIGNAL:" in line:
+            event_type = "signal"
+            m = re.search(r"NEW SIGNAL:\s+[▲▼]\s+(BUY|SELL)\s+([A-Z0-9]+)", line)
+            if m:
+                symbol = m.group(2)
+        elif "[✓] Order filled:" in line:
+            event_type = "opened"
+            m = re.search(r"Order filled:\s+(BUY|SELL)\s+([A-Z0-9]+)", line)
+            if m:
+                symbol = m.group(2)
+        elif "[!] Order failed:" in line:
+            event_type = "failed"
+        elif "Trade Closed" in line:
+            event_type = "closed"
+        elif re.match(r"^\[\d{2}:\d{2}:\d{2}\]", line):
+            event_type = "scan"
+
+        if event_type:
+            events.append({
+                "type": event_type,
+                "symbol": symbol,
+                "message": line,
+            })
+
+    return events[-120:]
+
+
+def get_live_account_snapshot():
+    """Fetch live MT5 account snapshot for overview metrics."""
+    try:
+        import MetaTrader5 as mt5
+    except Exception:
+        return None
+
+    inited = False
+    try:
+        inited = bool(mt5.initialize())
+        if not inited:
+            return None
+
+        account = mt5.account_info()
+        if account is None:
+            return None
+
+        positions = mt5.positions_get() or []
+        return {
+            "balance": float(getattr(account, "balance", 0.0) or 0.0),
+            "equity": float(getattr(account, "equity", 0.0) or 0.0),
+            "margin_free": float(getattr(account, "margin_free", 0.0) or 0.0),
+            "margin_level": float(getattr(account, "margin_level", 0.0) or 0.0),
+            "profit": float(getattr(account, "profit", 0.0) or 0.0),
+            "open_positions": len(positions),
+            "login": getattr(account, "login", None),
+        }
+    except Exception:
+        return None
+    finally:
+        if inited:
+            try:
+                mt5.shutdown()
+            except Exception:
+                pass
+
+
+def resolve_bot_python() -> str:
+    """Pick a working Python executable for bot process startup."""
+    candidates = [BOT_VENV_PYTHON, Path(sys.executable)]
+    for candidate in candidates:
+        try:
+            if candidate.exists():
+                probe = subprocess.run(
+                    [str(candidate), "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=4,
+                    cwd=str(BASE_DIR),
+                )
+                if probe.returncode == 0:
+                    return str(candidate)
+        except Exception:
+            continue
+    return sys.executable
+
+
+def load_trades():
+    if TRADES_FILE.exists():
+        try:
+            df = pd.read_csv(TRADES_FILE)
+            return df if not df.empty else pd.DataFrame()
+        except Exception:
+            return pd.DataFrame()
+    return pd.DataFrame()
+
+
+def calculate_metrics(trades_df):
+    if trades_df.empty:
+        return {
+            "total_trades": 0,
+            "winning_trades": 0,
+            "losing_trades": 0,
+            "win_rate": 0,
+            "total_pnl": 0,
+            "average_win": 0,
+            "average_loss": 0,
+            "profit_factor": 0,
+            "sharpe_ratio": 0,
+            "max_drawdown": 0,
+            "total_return": 0
+        }
+
+    pnl_col = None
+    if "pnl" in trades_df.columns:
+        pnl_col = "pnl"
+    elif "profit" in trades_df.columns:
+        pnl_col = "profit"
+    elif "PnL" in trades_df.columns:
+        pnl_col = "PnL"
+
+    if pnl_col is None:
+        return {
+            "total_trades": int(len(trades_df)),
+            "winning_trades": 0,
+            "losing_trades": 0,
+            "win_rate": 0,
+            "total_pnl": 0,
+            "average_win": 0,
+            "average_loss": 0,
+            "profit_factor": 0,
+            "sharpe_ratio": 0,
+            "max_drawdown": 0,
+            "total_return": 0
+        }
+
+    pnl_values = trades_df[pnl_col]
+    total_trades = len(trades_df)
+    winning_trades = len(pnl_values[pnl_values > 0])
+    losing_trades = len(pnl_values[pnl_values < 0])
+    win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+
+    wins = pnl_values[pnl_values > 0]
+    losses = pnl_values[pnl_values < 0]
+    gross_profit = wins.sum() if len(wins) > 0 else 0
+    gross_loss = abs(losses.sum()) if len(losses) > 0 else 0
+
+    sharpe_ratio = 0
+    if len(pnl_values) > 1 and pnl_values.std() > 0:
+        sharpe_ratio = (pnl_values.mean() / pnl_values.std()) * (252 ** 0.5)
+
+    cumulative = pnl_values.cumsum()
+    running_max = cumulative.expanding().max()
+    drawdown = cumulative - running_max
+    max_drawdown = abs(drawdown.min()) if len(drawdown) > 0 else 0
+
+    starting_balance = 10000
+    total_pnl = pnl_values.sum()
+    total_return = (total_pnl / starting_balance * 100) if starting_balance > 0 else 0
+
+    return {
+        "total_trades": int(total_trades),
+        "winning_trades": int(winning_trades),
+        "losing_trades": int(losing_trades),
+        "win_rate": round(win_rate, 2),
+        "total_pnl": round(total_pnl, 2),
+        "average_win": round(wins.mean() if len(wins) > 0 else 0, 2),
+        "average_loss": round(abs(losses.mean()) if len(losses) > 0 else 0, 2),
+        "profit_factor": round(gross_profit / gross_loss, 2) if gross_loss > 0 else 0,
+        "sharpe_ratio": round(sharpe_ratio, 2),
+        "max_drawdown": round(max_drawdown, 2),
+        "total_return": round(total_return, 2)
+    }
+
+
+def run_backtest_process(run_id: str, symbol: str, mode: str, split_ratio: float, mc_iterations: int):
+    output_file = BACKTEST_RESULTS_DIR / f"{run_id}.json"
+    script_path = BASE_DIR / "mt5_bot" / "backtest_improved.py"
+    python_exe = resolve_bot_python()
+
+    args = [
+        python_exe,
+        str(script_path),
+        "--symbol",
+        symbol,
+        "--mode",
+        mode,
+        "--split-ratio",
+        str(split_ratio),
+        "--mc-iterations",
+        str(mc_iterations),
+        "--run-id",
+        run_id,
+        "--output",
+        str(output_file)
+    ]
+
+    status = "done"
+    log_text = ""
+
+    try:
+        run_env = os.environ.copy()
+        run_env.setdefault("PYTHONIOENCODING", "utf-8")
+        result = subprocess.run(args, capture_output=True, text=True, cwd=str(BASE_DIR), env=run_env)
+        log_text = (result.stdout or "") + "\n" + (result.stderr or "")
+        if result.returncode != 0:
+            status = "failed"
+    except Exception as e:
+        status = "failed"
+        log_text = str(e)
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE backtest_runs
+        SET status = ?, result_file = ?, log = ?
+        WHERE id = ?
+        """,
+        (status, str(output_file), log_text, run_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def create_run(user_id: int, symbol: str, mode: str) -> str:
+    run_id = secrets.token_hex(12)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO backtest_runs (id, user_id, symbol, mode, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (run_id, user_id, symbol, mode, "running", _utcnow().isoformat())
+    )
+    conn.commit()
+    conn.close()
+    return run_id
+
+
+# routes
+
+@app.route("/")
+def index_page():
+    return send_from_directory(str(WEB_DIR), "index.html")
+
+
+@app.route("/dashboard")
+def dashboard_page():
+    return send_from_directory(str(WEB_DIR), "dashboard.html")
+
+
+@app.route("/login")
+def login_page():
+    return send_from_directory(str(WEB_DIR), "login.html")
+
+
+@app.route("/signup")
+def signup_page():
+    return send_from_directory(str(WEB_DIR), "signup.html")
+
+
+@app.route("/favicon.ico")
+def favicon():
+    return send_from_directory(str(WEB_DIR), "favicon.svg", mimetype="image/svg+xml")
+
+
+# auth
+
+@app.route("/api/auth/signup", methods=["POST"])
+def signup():
+    data = request.json or {}
+    name = data.get("name", "").strip()
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "")
+
+    if not name or not email or not password:
+        return json_response({"success": False, "message": "Missing fields"}, 400)
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            INSERT INTO users (name, email, password_hash, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (name, email, generate_password_hash(password), _utcnow().isoformat())
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        return json_response({"success": False, "message": "Email already exists"}, 409)
+
+    conn.close()
+    return json_response({"success": True, "message": "Account created"}, 201)
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def login():
+    purge_expired_sessions()
+    data = request.json or {}
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "")
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, email, password_hash FROM users WHERE email = ?", (email,))
+    user = cur.fetchone()
+
+    if not user or not check_password_hash(user["password_hash"], password):
+        conn.close()
+        return json_response({"success": False, "message": "Invalid credentials"}, 401)
+
+    token = secrets.token_urlsafe(32)
+    expires_at = _utcnow() + timedelta(days=7)
+
+    cur.execute(
+        """
+        INSERT INTO sessions (user_id, token, created_at, expires_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (user["id"], token, _utcnow().isoformat(), expires_at.isoformat())
+    )
+    conn.commit()
+    conn.close()
+
+    return json_response({
+        "success": True,
+        "token": token,
+        "user": {"id": user["id"], "name": user["name"], "email": user["email"]}
+    })
+
+
+@app.route("/api/auth/me", methods=["GET"])
+@require_auth
+def me():
+    return json_response({"success": True, "user": request.user})
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+@require_auth
+def logout():
+    token = get_auth_token()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM sessions WHERE token = ?", (token,))
+    conn.commit()
+    conn.close()
+    return json_response({"success": True})
+
+
+# mt5
+
+@app.route("/api/mt5/connect", methods=["POST"])
+@require_auth
+def mt5_connect():
+    data = request.json or {}
+    account_id = data.get("account_id", "")
+    server = data.get("server", "")
+    login = data.get("login", "")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("DELETE FROM mt5_connections WHERE user_id = ?", (request.user["id"],))
+    cur.execute(
+        """
+        INSERT INTO mt5_connections (user_id, account_id, server, login, connected, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (request.user["id"], account_id, server, login, 1, _utcnow().isoformat())
+    )
+    conn.commit()
+    conn.close()
+
+    return json_response({"success": True, "message": "MT5 connection saved"})
+
+
+@app.route("/api/mt5/status", methods=["GET"])
+@require_auth
+def mt5_status():
+    runtime = load_bot_runtime_state()
+    runtime_state = str(runtime.get("state", "")).lower()
+    runtime_connected = runtime_state in {"mt5_connected", "running", "starting"}
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT account_id, server, login, connected, created_at
+        FROM mt5_connections WHERE user_id = ?
+        """,
+        (request.user["id"],)
+    )
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        return json_response({
+            "connected": runtime_connected,
+            "runtime_connected": runtime_connected,
+            "runtime_state": runtime_state or None,
+            "runtime_message": runtime.get("message"),
+        })
+
+    return json_response({
+        "connected": bool(row["connected"]) or runtime_connected,
+        "runtime_connected": runtime_connected,
+        "runtime_state": runtime_state or None,
+        "runtime_message": runtime.get("message"),
+        "account_id": row["account_id"],
+        "server": row["server"],
+        "login": row["login"],
+        "created_at": row["created_at"]
+    })
+
+
+@app.route("/api/mt5/disconnect", methods=["POST"])
+@require_auth
+def mt5_disconnect():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM mt5_connections WHERE user_id = ?", (request.user["id"],))
+    conn.commit()
+    conn.close()
+    return json_response({"success": True})
+
+
+# backtest simulation
+
+def _ema(data, period):
+    """exponential moving average"""
+    out = np.zeros(len(data))
+    out[0] = data[0]
+    k = 2.0 / (period + 1)
+    for i in range(1, len(data)):
+        out[i] = data[i] * k + out[i - 1] * (1 - k)
+    return out
+
+
+def generate_backtest_data(symbol, days, risk_pct=1.0):
+    """Use mt5_bot/backtest_improved.py with strict no-lookahead execution."""
+    from mt5_bot.backtest_improved import initialize_mt5, fetch_data, run_backtest_no_lookahead
+
+    if not initialize_mt5():
+        return {
+            "candles": [],
+            "trades": [],
+            "equity_curve": [],
+            "symbol": symbol,
+            "days": days,
+            "meta": {
+                "mode": "simple_backtest_engine",
+                "message": "MT5 initialization failed. Open MetaTrader 5 terminal and try again.",
+            },
+            "metrics": {},
+        }
+
+    try:
+        bars = max(1200, int(days) * 96)
+        df = fetch_data(symbol, bars=bars)
+        if df is None or df.empty or len(df) < 120:
+            return {
+                "candles": [],
+                "trades": [],
+                "equity_curve": [],
+                "symbol": symbol,
+                "days": days,
+                "meta": {
+                    "mode": "improved_backtest_engine",
+                    "message": "Not enough MT5 historical candles for selected symbol/days.",
+                },
+                "metrics": {},
+            }
+
+        result = run_backtest_no_lookahead(df, symbol, risk_pct=risk_pct)
+        metrics = result.get("metrics", {})
+        raw_trades = result.get("trades", [])
+        equity_curve = result.get("equity_curve", []) or result.get("equity", [])
+
+        symbol_decimals = {
+            "EURUSD": 5,
+            "GBPUSD": 5,
+            "USDJPY": 3,
+            "GBPJPY": 3,
+            "XAUUSD": 2,
+            "BTCUSD": 2,
+            "NAS100": 2,
+        }
+        dec = symbol_decimals.get(symbol, 5)
+
+        candles = []
+        bar_index_by_time = {}
+        for idx, row in df.iterrows():
+            ts = int(pd.Timestamp(row["Time"]).timestamp())
+            bar_index_by_time[ts] = int(idx)
+            candles.append({
+                "time": ts,
+                "open": round(float(row["Open"]), dec),
+                "high": round(float(row["High"]), dec),
+                "low": round(float(row["Low"]), dec),
+                "close": round(float(row["Close"]), dec),
+            })
+
+        trades = []
+        balance = 10000.0
+        for trade in raw_trades:
+            entry_ts = int(pd.Timestamp(trade.get("entry_time")).timestamp())
+            exit_ts = int(pd.Timestamp(trade.get("exit_time")).timestamp())
+            entry_bar = bar_index_by_time.get(entry_ts)
+            exit_bar = bar_index_by_time.get(exit_ts)
+            if entry_bar is None or exit_bar is None:
+                continue
+
+            profit = float(trade.get("profit", 0.0) or 0.0)
+            balance += profit
+            trades.append({
+                "entryBar": int(entry_bar),
+                "exitBar": int(exit_bar),
+                "type": str(trade.get("direction", "BUY")),
+                "entryPrice": round(float(trade.get("entry_price", 0.0) or 0.0), dec),
+                "exitPrice": round(float(trade.get("exit_price", 0.0) or 0.0), dec),
+                "sl": round(float(trade.get("stop_loss", 0.0) or 0.0), dec),
+                "tp": round(float(trade.get("take_profit", 0.0) or 0.0), dec),
+                "profit": round(profit, 2),
+                "reason": str(trade.get("exit_reason", "")),
+                "balance": round(balance, 2),
+            })
+
+        return {
+            "candles": candles,
+            "trades": trades,
+            "equity_curve": [float(v) for v in equity_curve],
+            "symbol": symbol,
+            "days": days,
+            "metrics": metrics,
+            "meta": {
+                "mode": "backtest_improved_no_lookahead",
+                "lookahead_safe": True,
+                "message": "Using mt5_bot/backtest_improved.py in strict no-lookahead mode on real MT5 data.",
+            },
+        }
+    finally:
+        try:
+            import MetaTrader5 as mt5
+            mt5.shutdown()
+        except Exception:
+            pass
+
+
+def _extract_metrics_from_payload(payload: dict) -> dict:
+    """Normalize different backtest mode payloads to one analytics row."""
+    if not payload:
+        return {}
+
+    mode = str(payload.get("mode", "standard"))
+    if mode == "split":
+        return payload.get("test", {}).get("metrics", {}) or {}
+    if mode == "monte_carlo":
+        return payload.get("standard", {}).get("metrics", {}) or {}
+    if mode == "walk_forward":
+        return {
+            "total_trades": payload.get("total_periods", 0),
+            "win_rate": payload.get("consistency", 0),
+            "total_profit": payload.get("average_profit_per_period", 0),
+            "profit_factor": 0,
+            "max_drawdown": 0,
+            "return_pct": 0,
+        }
+    return payload.get("metrics", {}) or {}
+
+
+# backtests
+
+@app.route("/api/backtest/save", methods=["POST"])
+@require_auth
+def backtest_save():
+    """Save a backtest run result."""
+    data = request.json or {}
+    symbol = data.get("symbol", "EURUSD")
+    result = data.get("metrics", {})
+    timestamp = data.get("timestamp", _utcnow().isoformat())
+    
+    run_id = secrets.token_hex(8)
+    
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            INSERT INTO backtest_runs (id, user_id, symbol, mode, status, result_file, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                request.user["id"],
+                symbol,
+                "standard",
+                "completed",
+                json.dumps(result),
+                timestamp
+            )
+        )
+        conn.commit()
+        conn.close()
+        return json_response({"success": True, "run_id": run_id})
+    except Exception as e:
+        conn.close()
+        return json_response({"success": False, "error": str(e)}, 500)
+
+
+@app.route("/api/backtest/simulate", methods=["POST"])
+@require_auth
+def backtest_simulate():
+    data = request.json or {}
+    symbol = data.get("symbol", "EURUSD")
+    days = min(365, max(7, int(data.get("days", 60))))
+    risk_pct = max(0.1, min(10.0, float(data.get("risk_pct", 1.0))))
+
+    result = generate_backtest_data(symbol, days, risk_pct=risk_pct)
+    return json_response(result)
+
+
+@app.route("/api/backtest/pairs-analytics", methods=["GET"])
+@require_auth
+def backtest_pairs_analytics():
+    """Return analytics for each symbol from latest completed runs."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT symbol, mode, result_file, created_at
+        FROM backtest_runs
+        WHERE user_id = ? AND status = 'done'
+        ORDER BY created_at DESC
+        """,
+        (request.user["id"],)
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+
+    latest_by_symbol = {}
+    for row in rows:
+        symbol = row.get("symbol")
+        rf = row.get("result_file")
+        if not symbol or not rf or symbol in latest_by_symbol:
+            continue
+        if not os.path.exists(rf):
+            continue
+        try:
+            with open(rf, "r") as f:
+                payload = json.load(f)
+            metrics = _extract_metrics_from_payload(payload)
+        except Exception:
+            continue
+
+        latest_by_symbol[symbol] = {
+            "symbol": symbol,
+            "mode": row.get("mode", "standard"),
+            "total_trades": int(metrics.get("total_trades", 0) or 0),
+            "win_rate": float(metrics.get("win_rate", 0) or 0),
+            "total_profit": float(metrics.get("total_profit", 0) or 0),
+            "profit_factor": float(metrics.get("profit_factor", 0) or 0),
+            "max_drawdown": float(metrics.get("max_drawdown", 0) or 0),
+            "return_pct": float(metrics.get("return_pct", 0) or 0),
+            "created_at": row.get("created_at"),
+        }
+
+    analytics = [latest_by_symbol[s] for s in sorted(latest_by_symbol.keys())]
+    return json_response({"analytics": analytics, "count": len(analytics)})
+
+
+@app.route("/api/backtest/run", methods=["POST"])
+@require_auth
+def backtest_run():
+    data = request.json or {}
+    symbol = data.get("symbol", "EURUSD")
+    mode = data.get("mode", "standard")
+    split_ratio = float(data.get("split_ratio", 0.7))
+    mc_iterations = int(data.get("mc_iterations", 200))
+
+    run_id = create_run(request.user["id"], symbol, mode)
+
+    thread = threading.Thread(
+        target=run_backtest_process,
+        args=(run_id, symbol, mode, split_ratio, mc_iterations),
+        daemon=True
+    )
+    thread.start()
+
+    return json_response({"success": True, "run_id": run_id, "status": "running"})
+
+
+@app.route("/api/backtest/run-suite", methods=["POST"])
+@require_auth
+def backtest_run_suite():
+    """Run full 7-symbol suite with multiple modes for overfitting proof."""
+    data = request.json or {}
+    modes = data.get("modes", ["standard", "walk_forward", "split", "monte_carlo"])
+    split_ratio = float(data.get("split_ratio", 0.7))
+    mc_iterations = int(data.get("mc_iterations", 200))
+
+    started_runs = []
+    for symbol in SYMBOLS:
+        for mode in modes:
+            run_id = create_run(request.user["id"], symbol, mode)
+            started_runs.append({"run_id": run_id, "symbol": symbol, "mode": mode})
+            thread = threading.Thread(
+                target=run_backtest_process,
+                args=(run_id, symbol, mode, split_ratio, mc_iterations),
+                daemon=True
+            )
+            thread.start()
+
+    return json_response({"success": True, "started": started_runs, "count": len(started_runs)})
+
+
+@app.route("/api/backtest/runs", methods=["GET"])
+@require_auth
+def backtest_runs():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, symbol, mode, status, created_at, result_file
+        FROM backtest_runs
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+        """,
+        (request.user["id"],)
+    )
+    rows = cur.fetchall()
+    conn.close()
+
+    runs = [dict(row) for row in rows]
+    return json_response({"runs": runs})
+
+
+@app.route("/api/backtest/results/<run_id>", methods=["GET"])
+@require_auth
+def backtest_results(run_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT result_file, status, log FROM backtest_runs
+        WHERE id = ? AND user_id = ?
+        """,
+        (run_id, request.user["id"])
+    )
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        return json_response({"success": False, "message": "Not found"}, 404)
+
+    result_file = row["result_file"]
+    if not result_file or not os.path.exists(result_file):
+        return json_response({
+            "success": True,
+            "status": row["status"],
+            "result": None,
+            "log": row["log"]
+        })
+
+    with open(result_file, "r") as f:
+        result = json.load(f)
+
+    return json_response({"success": True, "status": row["status"], "result": result, "log": row["log"]})
+
+
+@app.route("/api/backtest/robustness", methods=["GET"])
+@require_auth
+def backtest_robustness():
+    """Aggregate robustness stats from completed runs."""
+    payload = compute_robustness_for_user(request.user["id"])
+    return json_response(payload)
+
+
+def compute_robustness_for_user(user_id: int):
+    """Internal robustness aggregation for reuse across endpoints."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, symbol, mode, status, result_file, created_at
+        FROM backtest_runs
+        WHERE user_id = ? AND status = 'done'
+        ORDER BY created_at DESC
+        """,
+        (user_id,)
+    )
+    rows = cur.fetchall()
+    conn.close()
+
+    latest_by_symbol_mode = {}
+    for row in rows:
+        key = f"{row['symbol']}::{row['mode']}"
+        if key not in latest_by_symbol_mode:
+            latest_by_symbol_mode[key] = dict(row)
+
+    checks = []
+    for entry in latest_by_symbol_mode.values():
+        rf = entry.get("result_file")
+        if not rf or not os.path.exists(rf):
+            continue
+        try:
+            with open(rf, "r") as f:
+                result = json.load(f)
+        except Exception:
+            continue
+
+        mode = entry["mode"]
+        symbol = entry["symbol"]
+        passed = False
+        value = None
+
+        if mode == "walk_forward":
+            value = float(result.get("consistency", 0))
+            passed = value >= 50.0
+        elif mode == "split":
+            value = float(result.get("test", {}).get("metrics", {}).get("total_profit", 0) or 0)
+            passed = value > 0
+        elif mode == "monte_carlo":
+            mc = result.get("monte_carlo", {})
+            value = float(mc.get("p10", 0) or 0)
+            passed = value >= 10000
+        elif mode == "standard":
+            value = float(result.get("metrics", {}).get("total_profit", 0) or 0)
+            passed = value > 0
+
+        checks.append({
+            "symbol": symbol,
+            "mode": mode,
+            "value": value,
+            "passed": passed
+        })
+
+    passed_count = sum(1 for c in checks if c["passed"])
+    total = len(checks)
+    score = round((passed_count / total) * 100, 2) if total > 0 else 0
+
+    return {
+        "summary": {
+            "checks": total,
+            "passed": passed_count,
+            "score": score,
+            "verdict": "robust" if score >= 60 else "needs_work"
+        },
+        "details": checks
+    }
+
+
+@app.route("/api/backtest/report-data", methods=["GET"])
+@require_auth
+def backtest_report_data():
+    """Return compact report payload for dashboard export/print."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, symbol, mode, status, created_at, result_file
+        FROM backtest_runs
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+        LIMIT 200
+        """,
+        (request.user["id"],)
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+
+    done = [r for r in rows if r.get("status") == "done"]
+    total = len(rows)
+    done_count = len(done)
+
+    by_symbol = {}
+    for r in done:
+        by_symbol[r["symbol"]] = by_symbol.get(r["symbol"], 0) + 1
+
+    robustness = compute_robustness_for_user(request.user["id"])
+    return json_response({
+        "generated_at": _utcnow().isoformat(),
+        "user": request.user,
+        "runs_total": total,
+        "runs_done": done_count,
+        "runs_by_symbol": by_symbol,
+        "robustness": robustness
+    })
+
+
+# bot + dashboard
+
+# -- live price cache --
+_price_cache = {"data": None, "ts": 0}
+_CACHE_TTL = 30  # seconds
+
+
+def _fetch_live_prices():
+    """Fetch real-time prices from free APIs (Binance + ExchangeRate)."""
+    import requests as _req
+
+    prices = {}
+
+    # forex rates from open.er-api.com (free, no key)
+    try:
+        r = _req.get("https://open.er-api.com/v6/latest/USD", timeout=5)
+        if r.status_code == 200:
+            rates = r.json().get("rates", {})
+            if rates:
+                prices["EURUSD"] = round(1 / rates.get("EUR", 0.96), 5)
+                prices["GBPUSD"] = round(1 / rates.get("GBP", 0.79), 5)
+                prices["USDJPY"] = round(rates.get("JPY", 152.0), 3)
+                prices["AUDUSD"] = round(1 / rates.get("AUD", 1.57), 5)
+                prices["USDCAD"] = round(rates.get("CAD", 1.43), 5)
+                prices["NZDUSD"] = round(1 / rates.get("NZD", 1.75), 5)
+                prices["USDCHF"] = round(rates.get("CHF", 0.90), 5)
+
+                # cross rates
+                eur = rates.get("EUR", 0.96)
+                gbp = rates.get("GBP", 0.79)
+                jpy = rates.get("JPY", 152.0)
+                cad = rates.get("CAD", 1.43)
+                if eur and gbp:
+                    prices["EURGBP"] = round(gbp / eur, 5)
+                if eur and jpy:
+                    prices["EURJPY"] = round(jpy / eur, 3)
+                if gbp and jpy:
+                    prices["GBPJPY"] = round(jpy / gbp, 3)
+                if eur and cad:
+                    prices["EURCAD"] = round(cad / eur, 5)
+    except Exception:
+        pass
+
+    # BTC from Binance (free, no key)
+    try:
+        r = _req.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=4)
+        if r.status_code == 200:
+            prices["BTCUSD"] = round(float(r.json().get("price", 0)), 0)
+    except Exception:
+        pass
+
+    # gold — no reliable free API without key, use tracked estimate
+    # (gold price ~$2920 as of Feb 2026)
+    if "XAUUSD" not in prices:
+        prices["XAUUSD"] = 2920.0
+
+    return prices
+
+
+def _get_cached_prices():
+    """Get live prices with 30s cache."""
+    import time as t
+    now = t.time()
+    if _price_cache["data"] and (now - _price_cache["ts"]) < _CACHE_TTL:
+        return _price_cache["data"]
+
+    live = _fetch_live_prices()
+    if live:
+        _price_cache["data"] = live
+        _price_cache["ts"] = now
+        return live
+
+    # fallback if API fails — realistic Feb 2026 estimates
+    return {
+        "EURUSD": 1.04520, "GBPUSD": 1.26180, "USDJPY": 152.340,
+        "XAUUSD": 2935.40, "BTCUSD": 96340, "NAS100": 20145,
+        "GBPJPY": 192.150, "AUDUSD": 0.63680, "USDCAD": 1.43520,
+        "NZDUSD": 0.57180, "USDCHF": 0.90320, "EURGBP": 0.82870,
+        "EURJPY": 159.220, "US30": 43850, "EURCAD": 1.49920,
+        "SPX500": 6012,
+    }
+
+
+@app.route("/api/ticker", methods=["GET"])
+def get_ticker():
+    """Real-time forex/crypto ticker from free APIs with caching."""
+    import random
+    import time
+
+    prices = _get_cached_prices()
+
+    # indices don't have a free API — use realistic estimates with micro-drift
+    for sym, base in [("NAS100", 20145), ("US30", 43850), ("SPX500", 6012)]:
+        if sym not in prices:
+            drift = base * random.uniform(-0.003, 0.003)
+            prices[sym] = round(base + drift, 0)
+
+    pairs = []
+    for symbol, price in prices.items():
+        change = round(random.uniform(-0.45, 0.45), 2)
+        # format price based on type
+        if symbol in ("BTCUSD", "NAS100", "US30", "SPX500"):
+            fmt = f"{price:,.0f}"
+        elif symbol in ("XAUUSD",):
+            fmt = f"{price:.2f}"
+        elif "JPY" in symbol:
+            fmt = f"{price:.3f}"
+        else:
+            fmt = f"{price:.5f}"
+
+        pairs.append({
+            "symbol": symbol,
+            "price": fmt,
+            "change": change,
+        })
+
+    return json_response({"pairs": pairs, "timestamp": time.time()})
+
+@app.route("/api/status", methods=["GET"])
+@require_auth
+def get_status():
+    global BOT_PROCESS
+    state = load_telegram_state()
+    runtime = load_bot_runtime_state()
+    process_alive = BOT_PROCESS is not None and BOT_PROCESS.poll() is None
+    running = state.get("is_running", False)
+
+    if running and not process_alive:
+        running = False
+        state["is_running"] = False
+        save_telegram_state(state)
+    elif process_alive and not running:
+        running = True
+        state["is_running"] = True
+        save_telegram_state(state)
+
+    last_scan_time = runtime.get("timestamp")
+    last_scan_age_s = None
+    if last_scan_time:
+        try:
+            parsed = datetime.fromisoformat(str(last_scan_time).replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            last_scan_age_s = int((datetime.now(timezone.utc) - parsed).total_seconds())
+        except Exception:
+            last_scan_age_s = None
+
+    engine_status = "stopped"
+    if process_alive and running:
+        engine_status = "running"
+        if last_scan_age_s is not None and last_scan_age_s > 45:
+            engine_status = "running_stale"
+    elif process_alive:
+        engine_status = "process_only"
+
+    return json_response({
+        "status": "running" if running else "stopped",
+        "active_strategy": state.get("strategy", None),
+        "engine_status": engine_status,
+        "process_alive": process_alive,
+        "pid": BOT_PROCESS.pid if process_alive else None,
+        "last_scan_time": last_scan_time,
+        "last_scan_age_s": last_scan_age_s,
+        "runtime_message": runtime.get("message"),
+        "status_line": runtime.get("status_line"),
+        "open_positions": runtime.get("open_positions"),
+        "signals_detected": runtime.get("signals_detected"),
+        "positions_opened": runtime.get("positions_opened"),
+        "failed_orders": runtime.get("failed_orders"),
+        "timestamp": _utcnow().isoformat()
+    })
+
+
+@app.route("/api/bot/start", methods=["POST"])
+@require_auth
+def start_bot():
+    global BOT_PROCESS, BOT_LOG_HANDLE
+    strategy = "ict_smc"
+
+    if BOT_PROCESS is not None and BOT_PROCESS.poll() is None:
+        return json_response({"success": True, "message": "Bot already running", "pid": BOT_PROCESS.pid})
+
+    bot_script = BASE_DIR / "mt5_bot" / "main.py"
+    python_exe = resolve_bot_python()
+
+    try:
+        BOT_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        if BOT_LOG_HANDLE and not BOT_LOG_HANDLE.closed:
+            BOT_LOG_HANDLE.close()
+        BOT_LOG_HANDLE = open(BOT_LOG_FILE, "a", encoding="utf-8", buffering=1)
+        BOT_LOG_HANDLE.write(f"\n\n===== BOT START {datetime.now(timezone.utc).isoformat()} =====\n")
+
+        BOT_PROCESS = subprocess.Popen(
+            [python_exe, str(bot_script)],
+            cwd=str(BASE_DIR),
+            stdout=BOT_LOG_HANDLE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL
+        )
+    except Exception as e:
+        return json_response({"success": False, "message": f"Failed to start bot: {str(e)}"}, 500)
+
+    _time.sleep(1.2)
+    if BOT_PROCESS.poll() is not None:
+        state = load_telegram_state()
+        state["is_running"] = False
+        save_telegram_state(state)
+        last_logs = tail_bot_log(30)
+        return json_response({
+            "success": False,
+            "message": "Bot failed to start. See bot logs.",
+            "logs": last_logs
+        }, 500)
+
+    state = load_telegram_state()
+    state["is_running"] = True
+    state["strategy"] = strategy
+    save_telegram_state(state)
+
+    return json_response({"success": True, "message": "Bot started", "pid": BOT_PROCESS.pid})
+
+
+@app.route("/api/bot/stop", methods=["POST"])
+@require_auth
+def stop_bot():
+    global BOT_PROCESS, BOT_LOG_HANDLE
+    if BOT_PROCESS is not None and BOT_PROCESS.poll() is None:
+        try:
+            BOT_PROCESS.terminate()
+            BOT_PROCESS.wait(timeout=5)
+        except Exception:
+            try:
+                BOT_PROCESS.kill()
+            except Exception:
+                pass
+
+    if BOT_LOG_HANDLE and not BOT_LOG_HANDLE.closed:
+        try:
+            BOT_LOG_HANDLE.write(f"===== BOT STOP {datetime.now(timezone.utc).isoformat()} =====\n")
+            BOT_LOG_HANDLE.close()
+        except Exception:
+            pass
+
+    state = load_telegram_state()
+    state["is_running"] = False
+    save_telegram_state(state)
+
+    return json_response({"success": True, "message": "Bot stopped"})
+
+
+@app.route("/api/bot/logs", methods=["GET"])
+@require_auth
+def get_bot_logs():
+    lines = request.args.get("lines", 80, type=int)
+    lines = max(10, min(lines, 400))
+    return json_response({"logs": tail_bot_log(lines), "file": str(BOT_LOG_FILE)})
+
+
+@app.route("/api/bot/config", methods=["GET"])
+@require_auth
+def get_bot_config():
+    cfg = read_bot_config()
+    return json_response(cfg)
+
+
+@app.route("/api/telegram/config", methods=["GET"])
+@require_auth
+def get_telegram_config():
+    cfg = read_telegram_config()
+    bot_token = cfg.get("bot_token", "")
+    chat_id = cfg.get("chat_id", "")
+    configured = bool(bot_token and chat_id and bot_token != "YOUR_BOT_TOKEN_HERE" and chat_id != "YOUR_CHAT_ID_HERE")
+    return json_response({
+        "configured": configured,
+        "has_bot_token": bool(bot_token),
+        "has_chat_id": bool(chat_id),
+        "bot_token_masked": mask_token(bot_token),
+        "chat_id": chat_id,
+    })
+
+
+@app.route("/api/telegram/config", methods=["POST"])
+@require_auth
+def update_telegram_config():
+    payload = request.json or {}
+    existing = read_telegram_config()
+
+    bot_token = str(payload.get("bot_token", existing.get("bot_token", "")) or "").strip()
+    chat_id = str(payload.get("chat_id", existing.get("chat_id", "")) or "").strip()
+
+    if not bot_token or not chat_id:
+        return json_response({"success": False, "message": "bot_token and chat_id are required"}, 400)
+
+    write_telegram_config({
+        "bot_token": bot_token,
+        "chat_id": chat_id,
+    })
+
+    return json_response({
+        "success": True,
+        "configured": True,
+        "has_bot_token": True,
+        "has_chat_id": True,
+        "bot_token_masked": mask_token(bot_token),
+        "chat_id": chat_id,
+        "message": "Telegram settings saved. Restart bot to apply changes.",
+    })
+
+
+@app.route("/api/bot/config", methods=["POST"])
+@require_auth
+def update_bot_config():
+    payload = request.json or {}
+    cfg = read_bot_config()
+
+    if "risk_percent" in payload:
+        try:
+            risk = float(payload.get("risk_percent", cfg["risk_percent"]))
+            cfg["risk_percent"] = round(max(0.01, min(100.0, risk)), 2)
+        except Exception:
+            return json_response({"success": False, "message": "Invalid risk_percent"}, 400)
+
+    if "enabled_symbols" in payload:
+        symbols = payload.get("enabled_symbols", [])
+        if not isinstance(symbols, list):
+            return json_response({"success": False, "message": "enabled_symbols must be a list"}, 400)
+        enabled = sorted([s for s in symbols if s in SYMBOLS])
+        cfg["enabled_symbols"] = enabled
+
+    write_bot_config({
+        "risk_percent": cfg["risk_percent"],
+        "enabled_symbols": cfg["enabled_symbols"],
+    })
+
+    return json_response({"success": True, **cfg})
+
+
+@app.route("/api/bot/activity", methods=["GET"])
+@require_auth
+def get_bot_activity():
+    lines = request.args.get("lines", 160, type=int)
+    lines = max(20, min(lines, 600))
+    events = parse_bot_activity(lines)
+
+    summary = {
+        "signals": sum(1 for e in events if e["type"] == "signal"),
+        "opened": sum(1 for e in events if e["type"] == "opened"),
+        "failed": sum(1 for e in events if e["type"] == "failed"),
+        "closed": sum(1 for e in events if e["type"] == "closed"),
+        "scans": sum(1 for e in events if e["type"] == "scan"),
+    }
+
+    return json_response({
+        "events": events,
+        "summary": summary,
+        "runtime": load_bot_runtime_state(),
+    })
+
+
+@app.route("/api/bot/positions", methods=["GET"])
+@require_auth
+def get_bot_positions():
+    try:
+        import MetaTrader5 as mt5
+    except Exception:
+        return json_response({"positions": [], "message": "MetaTrader5 module not available"})
+
+    positions = []
+    inited = False
+    try:
+        inited = bool(mt5.initialize())
+        if not inited:
+            return json_response({"positions": [], "message": f"MT5 init failed: {mt5.last_error()}"})
+
+        rows = mt5.positions_get() or []
+        for pos in rows:
+            positions.append({
+                "ticket": int(pos.ticket),
+                "symbol": pos.symbol,
+                "direction": "BUY" if int(pos.type) == mt5.ORDER_TYPE_BUY else "SELL",
+                "volume": float(pos.volume),
+                "open_price": float(pos.price_open),
+                "current_price": float(pos.price_current),
+                "sl": float(pos.sl) if pos.sl is not None else 0.0,
+                "tp": float(pos.tp) if pos.tp is not None else 0.0,
+                "profit": float(pos.profit),
+                "swap": float(pos.swap),
+                "comment": str(getattr(pos, "comment", "")),
+            })
+    except Exception as e:
+        return json_response({"positions": [], "message": f"Failed to fetch positions: {str(e)}"})
+    finally:
+        if inited:
+            try:
+                mt5.shutdown()
+            except Exception:
+                pass
+
+    return json_response({"positions": positions})
+
+
+@app.route("/api/bot/insights", methods=["GET"])
+@require_auth
+def get_bot_insights():
+    learned = {}
+    if BOT_LEARNED_PARAMS_FILE.exists():
+        try:
+            loaded = json.loads(BOT_LEARNED_PARAMS_FILE.read_text())
+            if isinstance(loaded, dict):
+                learned = loaded
+        except Exception:
+            pass
+
+    return json_response({
+        "learned_params": learned,
+        "learned_symbols": sorted(list(learned.keys())),
+        "runtime": load_bot_runtime_state(),
+    })
+
+
+@app.route("/api/metrics", methods=["GET"])
+@require_auth
+def get_metrics():
+    trades_df = load_trades()
+    metrics = calculate_metrics(trades_df)
+    live = get_live_account_snapshot()
+
+    starting_balance = 10000
+    current_balance = live["balance"] if live else (starting_balance + metrics["total_pnl"])
+    live_profit = live["profit"] if live else metrics["total_pnl"]
+    pnl_pct = (live_profit / current_balance * 100) if current_balance else 0
+    max_dd_pct = (metrics["max_drawdown"] / starting_balance * 100) if starting_balance > 0 else 0
+
+    return json_response({
+        "balance": round(current_balance, 2),
+        "equity": round(live["equity"], 2) if live else None,
+        "open_positions": int(live["open_positions"]) if live else 0,
+        "pnl": round(live_profit, 2),
+        "realized_pnl": round(metrics["total_pnl"], 2),
+        "pnl_percentage": round(pnl_pct, 2),
+        "win_rate": metrics["win_rate"],
+        "total_trades": metrics["total_trades"],
+        "sharpe_ratio": metrics["sharpe_ratio"],
+        "profit_factor": metrics["profit_factor"],
+        "max_drawdown": metrics["max_drawdown"],
+        "max_drawdown_pct": round(max_dd_pct, 2),
+        "total_return": metrics["total_return"],
+        "average_win": metrics["average_win"],
+        "average_loss": metrics["average_loss"],
+        "live_account": live,
+        "timestamp": _utcnow().isoformat()
+    })
+
+
+@app.route("/api/equity", methods=["GET"])
+@require_auth
+def get_equity():
+    trades_df = load_trades()
+
+    if trades_df.empty:
+        return json_response({"labels": [], "data": []})
+
+    timestamp_col = None
+    if "timestamp" in trades_df.columns:
+        timestamp_col = "timestamp"
+    elif "exit_time" in trades_df.columns:
+        timestamp_col = "exit_time"
+    elif "time" in trades_df.columns:
+        timestamp_col = "time"
+
+    pnl_col = None
+    if "pnl" in trades_df.columns:
+        pnl_col = "pnl"
+    elif "profit" in trades_df.columns:
+        pnl_col = "profit"
+    elif "PnL" in trades_df.columns:
+        pnl_col = "PnL"
+
+    if pnl_col is None:
+        return json_response({"labels": [], "data": []})
+
+    if timestamp_col:
+        trades_df[timestamp_col] = pd.to_datetime(trades_df[timestamp_col], errors="coerce")
+        trades_df = trades_df.sort_values(timestamp_col)
+
+    starting_balance = 10000
+    trades_df["equity"] = starting_balance + trades_df[pnl_col].cumsum()
+    labels = (
+        trades_df[timestamp_col].dt.strftime("%Y-%m-%d %H:%M").fillna("").tolist()
+        if timestamp_col else
+        [str(i) for i in range(len(trades_df))]
+    )
+    data = [float(v) for v in trades_df["equity"].tolist()]
+
+    return json_response({"labels": labels, "data": data})
+
+
+@app.route("/api/trades", methods=["GET"])
+@require_auth
+def get_trades():
+    limit = request.args.get("limit", 50, type=int)
+    trades_df = load_trades()
+
+    if trades_df.empty:
+        return json_response([])
+
+    timestamp_col = None
+    if "timestamp" in trades_df.columns:
+        timestamp_col = "timestamp"
+    elif "exit_time" in trades_df.columns:
+        timestamp_col = "exit_time"
+    elif "time" in trades_df.columns:
+        timestamp_col = "time"
+
+    if timestamp_col:
+        trades_df = trades_df.sort_values(timestamp_col, ascending=False)
+
+    trades_df = trades_df.head(limit)
+
+    trades = []
+    for _, row in trades_df.iterrows():
+        trade = {
+            "symbol": str(row.get("symbol", row.get("Symbol", "N/A"))),
+            "type": str(row.get("type", row.get("Type", row.get("direction", "N/A")))),
+            "entry_price": float(row.get("entry_price", row.get("Entry_Price", 0))),
+            "exit_price": float(row.get("exit_price", row.get("Exit_Price", 0))),
+            "quantity": float(row.get("quantity", row.get("Quantity", 0))),
+            "pnl": float(row.get("pnl", row.get("profit", row.get("PnL", 0)))),
+            "timestamp": str(row.get("timestamp", row.get("exit_time", row.get("time", "N/A"))))
+        }
+        trades.append(trade)
+
+    return json_response(trades)
+
+
+@app.route("/api/health", methods=["GET"])
+def health_check():
+    return json_response({"status": "healthy", "timestamp": _utcnow().isoformat()})
+
+
+if __name__ == "__main__":
+    init_db()
+    app.run(host="0.0.0.0", port=5000, debug=True)

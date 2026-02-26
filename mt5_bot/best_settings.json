@@ -1,91 +1,12 @@
 {
-  "generated_at": "2026-01-27T14:32:31.169756Z",
-  "source": "backtest_improved.py (AI Training)",
-  "training_iteration": 1,
-  "total_simulated_trades": 1023014,
   "instruments": {
-    "XAUUSD": {
-      "EMA_Fast": 13,
-      "EMA_Slow": 150,
-      "ADX": 40.0,
-      "ATR_Mult": 2.5,
-      "Trades": 36,
-      "Win_Rate": 75.0,
-      "Profit": 15331.00000000015,
-      "Max_DD": 4869.999999999876,
-      "PF": 2.287886424731213,
-      "Expectancy": 384.5277777777825
-    },
-    "USDJPY": {
-      "EMA_Fast": 10,
-      "EMA_Slow": 50,
-      "ADX": 10.0,
-      "ATR_Mult": 1.5,
-      "Trades": 54,
-      "Win_Rate": 51.85185185185185,
-      "Profit": 2478.4000000000306,
-      "Max_DD": 694.6000000000313,
-      "PF": 1.8128566743194647
-    },
-    "GBPUSD": {
-      "EMA_Fast": 25,
-      "EMA_Slow": 250,
-      "ADX": 35.0,
-      "ATR_Mult": 3.0,
-      "Trades": 66,
-      "Win_Rate": 63.63636363636363,
-      "Profit": 2419.000000000049,
-      "Max_DD": 823.0000000000236,
-      "PF": 2.2805717310747253,
-      "Expectancy": 36.65151515151588
-    },
-    "EURUSD": {
-      "EMA_Fast": 25,
-      "EMA_Slow": 50,
-      "ADX": 35.0,
-      "ATR_Mult": 3.0,
-      "Trades": 68,
-      "Win_Rate": 63.23529411764706,
-      "Profit": 1833.5999999999567,
-      "Max_DD": 389.00000000001273,
-      "PF": 2.0400453771978917,
-      "Expectancy": 26.96470588235228
-    },
-    "NAS100": {
-      "EMA_Fast": 15,
-      "EMA_Slow": 225,
-      "ADX": 40.0,
-      "ATR_Mult": 2.5,
-      "Trades": 44,
-      "Win_Rate": 63.63636363636363,
-      "Profit": 4686.499999999971,
-      "Max_DD": 1950.0,
-      "PF": 1.8014536126549718,
-      "Expectancy": 106.51136363636297
-    },
-    "GBPJPY": {
-      "EMA_Fast": 8,
-      "EMA_Slow": 25,
-      "ADX": 17.5,
-      "ATR_Mult": 2.0,
-      "Trades": 151,
-      "Win_Rate": 49.00662251655629,
-      "Profit": 4601.000000000193,
-      "Max_DD": 1469.4999999998872,
-      "PF": 1.5430190015343168,
-      "Expectancy": 29.731875217847247
-    },
-    "BTCUSD": {
-      "EMA_Fast": 23,
-      "EMA_Slow": 275,
-      "ADX": 55.0,
-      "ATR_Mult": 2.0,
-      "Trades": 25,
-      "Win_Rate": 60.0,
-      "Profit": 22877.79999999999,
-      "Max_DD": 8204.09999999989,
-      "PF": 2.1353577862364417,
-      "Expectancy": 915.1119999999994
-    }
-  }
+    "EURUSD":  { "EMA_Fast": 13, "EMA_Slow": 50, "ADX": 22.0, "ATR_Mult": 1.6 },
+    "GBPUSD":  { "EMA_Fast": 13, "EMA_Slow": 50, "ADX": 22.0, "ATR_Mult": 1.6 },
+    "USDJPY":  { "EMA_Fast": 13, "EMA_Slow": 50, "ADX": 25.0, "ATR_Mult": 1.6 },
+    "XAUUSD":  { "EMA_Fast": 8,  "EMA_Slow": 21, "ADX": 22.0, "ATR_Mult": 1.8 },
+    "GBPJPY":  { "EMA_Fast": 10, "EMA_Slow": 34, "ADX": 22.0, "ATR_Mult": 1.6 },
+    "BTCUSD":  { "EMA_Fast": 8,  "EMA_Slow": 21, "ADX": 20.0, "ATR_Mult": 2.0 },
+    "NAS100":  { "EMA_Fast": 8,  "EMA_Slow": 21, "ADX": 22.0, "ATR_Mult": 1.6 }
+  },
+  "_note": "Updated — crossover+pullback strategy, ADX>=22 required (real trend threshold)"
 }

@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-02-25T18:01:35.556713+00:00",
+  "state": "running",
+  "message": "Scan cycle completed",
+  "enabled_symbols": [
+    "EURUSD",
+    "GBPJPY",
+    "GBPUSD",
+    "USDJPY",
+    "XAUUSD"
+  ],
+  "open_positions": 0,
+  "signals_detected": 5,
+  "positions_opened": 0,
+  "failed_orders": 5,
+  "status_line": "EURUSD:FAIL | GBPUSD:FAIL | USDJPY:FAIL | XAUUSD:FAIL | GBPJPY:FAIL"
+}

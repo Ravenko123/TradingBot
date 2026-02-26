@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login — Zenith</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260225-2">
+    <link rel="shortcut icon" href="/favicon.svg?v=20260225-2">
+    <link rel="apple-touch-icon" href="/favicon.svg?v=20260225-2">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="css/style.css?v=20260226-3">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="auth-body">
+    <canvas id="particleCanvas"></canvas>
+
+    <!-- orbital decorations -->
+    <div class="auth-orbital">
+        <div class="orbital-ring orbital-ring-1"></div>
+        <div class="orbital-ring orbital-ring-2"></div>
+    </div>
+
+    <!-- floating pair glyphs -->
+    <div class="ghost-pairs-layer" id="ghostPairsLayer"></div>
+
+    <div class="auth-card">
+        <div class="auth-header">
+            <div class="brand-icon">
+                <svg viewBox="0 0 40 40" fill="none">
+                    <path d="M20 4L36 12V28L20 36L4 28V12L20 4Z" stroke="url(#bg)" stroke-width="2" fill="none"/>
+                    <path d="M12 20L18 14L24 22L32 12" stroke="url(#bg)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    <defs><linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#00ff87"/><stop offset="100%" stop-color="#60efff"/></linearGradient></defs>
+                </svg>
+            </div>
+            <h1>Welcome back</h1>
+            <p>Sign in to your Zenith dashboard</p>
+        </div>
+        <form id="loginForm" class="auth-form">
+            <label>Email</label>
+            <input type="email" id="loginEmail" required placeholder="you@email.com" />
+            <label>Password</label>
+            <input type="password" id="loginPassword" required placeholder="••••••••" />
+            <button type="submit" class="btn-glow"><span class="btn-glow-text">Sign In</span><span class="btn-glow-icon"><i class="fas fa-arrow-right"></i></span></button>
+        </form>
+        <div class="auth-footer">
+            <span>New here?</span>
+            <a href="signup.html">Create an account</a>
+        </div>
+        <div id="loginStatus" class="auth-status"></div>
+    </div>
+
+    <script src="js/auth.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>

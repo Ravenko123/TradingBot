@@ -1,11 +1,7 @@
 {
   "risk_percent": 15.0,
   "enabled_symbols": [
-    "BTCUSD",
-    "EURUSD",
     "GBPJPY",
-    "GBPUSD",
-    "NAS100",
     "USDJPY",
     "XAUUSD"
   ]
