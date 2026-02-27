@@ -9,17 +9,21 @@
     <link rel="apple-touch-icon" href="/favicon.svg?v=20260225-2">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="css/style.css?v=20260226-3">
-    <link rel="stylesheet" href="css/dashboard.css?v=20260226-1">
+    <link rel="stylesheet" href="css/style.css?v=20260226-12">
+    <link rel="stylesheet" href="css/dashboard.css?v=20260226-14">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body class="dashboard-body">
+<div class="page-transition-overlay" id="pageTransition"></div>
 
     <!-- Cosmic Background Layers -->
     <div class="dash-nebula-canvas" id="dashNebulaCanvas"></div>
     <div class="ghost-pairs-layer" id="ghostPairsLayer"></div>
     <div class="dash-reactive-grid" id="dashReactiveGrid"></div>
+    <div class="stats-space-stars dash-space-stars" aria-hidden="true">
+        <span class="star s1"></span><span class="star s2"></span><span class="star s3"></span><span class="star s4"></span><span class="star s5"></span><span class="star s6"></span><span class="star s7"></span><span class="star s8"></span><span class="star s9"></span><span class="star s10"></span><span class="star s11"></span><span class="star s12"></span>
+    </div>
     <div class="dash-vignette"></div>
     <canvas id="particleCanvas"></canvas>
 
@@ -175,13 +179,38 @@
                 <div class="form-group-grid">
                     <div class="form-group">
                         <label><i class="fas fa-percent" style="color:var(--z-green);margin-right:6px;font-size:0.75rem;"></i>Risk per Trade (%)</label>
-                        <input id="botRiskInput" type="number" class="text-input" min="0.01" max="100" step="0.01" placeholder="e.g. 2.0" />
+                        <input id="botRiskInput" type="number" class="text-input" min="0.10" max="2.00" step="0.01" placeholder="e.g. 0.50" />
                         <span class="form-hint">Equivalent to Telegram <strong>/risk</strong></span>
                     </div>
                     <div class="form-group" style="display:flex;align-items:flex-end;gap:10px;">
                         <button class="btn btn-glow" id="saveBotRiskBtn"><i class="fas fa-save"></i> Save Risk</button>
                         <button class="btn btn-outline" id="enableAllSymbolsBtn"><i class="fas fa-check-double"></i> Enable All</button>
                         <button class="btn btn-outline" id="disableAllSymbolsBtn"><i class="fas fa-ban"></i> Disable All</button>
+                    </div>
+                </div>
+
+                <div class="form-group-grid" style="margin-top:12px;">
+                    <div class="form-group">
+                        <label><i class="fas fa-shield-halved" style="color:var(--z-green);margin-right:6px;font-size:0.75rem;"></i>Daily Drawdown Limit (%)</label>
+                        <input id="botDailyDdInput" type="number" class="text-input" min="0.5" max="25" step="0.1" placeholder="e.g. 5.0" />
+                        <span class="form-hint">Blocks new trades when adjusted daily loss exceeds this value.</span>
+                    </div>
+                    <div class="form-group">
+                        <label><i class="fas fa-layer-group" style="color:var(--z-green);margin-right:6px;font-size:0.75rem;"></i>Margin Usage Cap (%)</label>
+                        <input id="botMarginCapInput" type="number" class="text-input" min="5" max="95" step="0.5" placeholder="e.g. 20" />
+                        <span class="form-hint">Blocks new orders when margin usage is above this cap.</span>
+                    </div>
+                </div>
+
+                <div class="form-group-grid" style="margin-top:12px;">
+                    <div class="form-group">
+                        <label><i class="fas fa-sliders" style="color:var(--z-green);margin-right:6px;font-size:0.75rem;"></i>Daily Drawdown Adjustment (USD)</label>
+                        <input id="botDdAdjustmentInput" type="number" class="text-input" step="0.01" placeholder="e.g. 0 or 250" />
+                        <span class="form-hint">Manual offset applied to daily PnL for circuit-breaker calculation.</span>
+                    </div>
+                    <div class="form-group" style="display:flex;align-items:flex-end;gap:10px;">
+                        <button class="btn btn-glow" id="saveBotGuardsBtn"><i class="fas fa-save"></i> Save Guards</button>
+                        <button class="btn btn-outline" id="resetDrawdownAdjBtn"><i class="fas fa-rotate-left"></i> Reset Daily DD</button>
                     </div>
                 </div>
 
@@ -1068,10 +1097,34 @@
         </section>
     </main>
 
+    <div class="mt5-help-modal" id="mt5HelpModal" aria-hidden="true">
+        <div class="mt5-help-backdrop" id="mt5HelpBackdrop"></div>
+        <div class="mt5-help-card glass-card" role="dialog" aria-modal="true" aria-labelledby="mt5HelpTitle">
+            <div class="mt5-help-header">
+                <h3 id="mt5HelpTitle"><i class="fas fa-triangle-exclamation"></i> MT5 Not Installed</h3>
+                <button class="btn btn-outline btn-sm" id="mt5HelpCloseBtn" type="button"><i class="fas fa-xmark"></i></button>
+            </div>
+            <p class="mt5-help-copy" id="mt5HelpMessage">The bot could not start because MetaTrader 5 is not available on this machine.</p>
+            <ol class="mt5-help-steps">
+                <li>Download and install MetaTrader 5 Desktop.</li>
+                <li>Open MT5 once and log in to your broker account.</li>
+                <li>Keep MT5 running, then press Start Bot again.</li>
+            </ol>
+            <div class="mt5-help-actions">
+                <a class="btn btn-glow" id="mt5InstallLink" href="https://www.metatrader5.com/en/download" target="_blank" rel="noopener noreferrer"><i class="fas fa-arrow-up-right-from-square"></i> Install MT5</a>
+                <button class="btn btn-outline" id="mt5HelpOkBtn" type="button">Got it</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
-    <script src="js/main.js?v=20260226-1"></script>
-    <script src="js/dashboard-app.js?v=20260226-1"></script>
+    <script src="js/main.js?v=20260226-5"></script>
+    <script src="js/dashboard-app.js?v=20260226-13"></script>
 </body>
 </html>
+
+
+
+

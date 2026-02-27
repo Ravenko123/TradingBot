@@ -6,386 +6,342 @@
     <title>About — Zenith Trading Bot</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260225-2">
     <link rel="shortcut icon" href="/favicon.svg?v=20260225-2">
-    <link rel="apple-touch-icon" href="/favicon.svg?v=20260225-2">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=20260226-3">
-    <link rel="stylesheet" href="css/about.css">
+    <link rel="stylesheet" href="css/style.css?v=20260226-12">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* About page extras */
+        .about-hero-tagline {
+            display: inline-flex; align-items: center; gap: 0.6rem;
+            background: rgba(0,255,135,0.06); border: 1px solid rgba(0,255,135,0.18);
+            border-radius: 999px; padding: 6px 18px;
+            font-size: 0.72rem; font-weight: 700; letter-spacing: 2px;
+            text-transform: uppercase; color: var(--z-green); margin-bottom: 2rem;
+        }
+        /* Big number stat strip */
+        .about-big-stats {
+            display: grid; grid-template-columns: repeat(4, 1fr);
+            gap: 1px; background: rgba(255,255,255,0.035);
+            border-radius: 20px; overflow: hidden; margin: 5rem 0;
+        }
+        .about-big-stat {
+            background: rgba(5,12,20,0.8); padding: 2.75rem 2rem;
+            display: flex; flex-direction: column; align-items: center;
+            gap: 0.5rem; text-align: center; position: relative;
+            transition: background 0.3s;
+        }
+        .about-big-stat:hover { background: rgba(0,255,135,0.04); }
+        .about-big-stat-num {
+            font-size: clamp(2.6rem,4.5vw,4.4rem); font-weight: 800;
+            font-family: var(--font-display); line-height: 1;
+            background: linear-gradient(135deg, #00ff87, #60efff);
+            -webkit-background-clip: text; background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 24px rgba(0,255,135,0.3));
+        }
+        .about-big-stat-lbl { font-size: 0.82rem; color: var(--z-text-3); letter-spacing: 0.08em; text-transform: uppercase; }
+        /* Feature rows (cascade alternating) */
+        .feature-row {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 4rem;
+            align-items: center; padding: 5rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+        }
+        .feature-row:last-child { border-bottom: none; }
+        .feature-row.flip .feat-text { order: 2; }
+        .feature-row.flip .feat-visual { order: 1; }
+        .feat-text { display: flex; flex-direction: column; gap: 1.5rem; }
+        .feat-text-tag { display: inline-flex; align-items: center; gap: 0.5rem;
+            font-size: 0.68rem; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+            color: var(--z-cyan); }
+        .feat-text-tag::before { content: ''; display: inline-block; width: 18px; height: 1px; background: var(--z-cyan); }
+        .feat-title { font-size: clamp(1.8rem,3vw,2.8rem); font-weight: 700; font-family: var(--font-display); line-height: 1.15; }
+        .feat-desc { color: var(--z-text-3); line-height: 1.85; font-size: 1rem; }
+        .feat-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+        .feat-chip { padding: 4px 14px; background: rgba(0,255,135,0.07); border-radius: 999px;
+            font-size: 0.78rem; color: var(--z-green); font-weight: 500; }
+        .feat-visual { display: flex; flex-direction: column; gap: 1rem; }
+        .feat-stat-box {
+            background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 16px; padding: 1.5rem 1.75rem;
+            display: flex; align-items: center; justify-content: space-between;
+            transition: border-color 0.3s, background 0.3s;
+        }
+        .feat-stat-box:hover { border-color: rgba(0,255,135,0.18); background: rgba(0,255,135,0.03); }
+        .feat-stat-label { font-size: 0.82rem; color: var(--z-text-3); }
+        .feat-stat-val { font-family: var(--font-mono); font-size: 1.1rem; font-weight: 700; color: var(--z-green); }
+        .feat-stat-val.cyan { color: var(--z-cyan); }
+        .feat-stat-val.white { color: var(--z-text); }
+        /* Signal confluence diagram */
+        .confluence-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+        .conf-item {
+            display: flex; align-items: center; gap: 0.85rem;
+            padding: 0.85rem 1rem; border-radius: 12px;
+            background: rgba(255,255,255,0.025); font-size: 0.84rem;
+            transition: background 0.2s;
+        }
+        .conf-item:hover { background: rgba(0,255,135,0.05); }
+        .conf-icon { width: 2rem; height: 2rem; border-radius: 8px;
+            background: rgba(0,255,135,0.1); display: flex; align-items: center;
+            justify-content: center; color: var(--z-green); font-size: 0.8rem; flex-shrink: 0; }
+        .conf-name { color: var(--z-text-2); font-weight: 500; }
+        .conf-val { margin-left: auto; font-family: var(--font-mono); font-size: 0.78rem; color: var(--z-text-3); }
+        /* Tech logos */
+        .tech-logos { display: grid; grid-template-columns: repeat(3,1fr); gap: 1rem; }
+        .tech-logo-card {
+            display: flex; flex-direction: column; align-items: center; gap: 0.6rem;
+            padding: 1.5rem; border-radius: 14px; background: rgba(255,255,255,0.025);
+            border: 1px solid rgba(255,255,255,0.04); transition: all 0.3s;
+            text-align: center;
+        }
+        .tech-logo-card:hover { background: rgba(0,255,135,0.05); border-color: rgba(0,255,135,0.14); transform: translateY(-3px); }
+        .tech-logo-icon { font-size: 1.6rem; color: var(--z-green); }
+        .tech-logo-name { font-size: 0.82rem; font-weight: 600; color: var(--z-text-2); }
+        .tech-logo-desc { font-size: 0.72rem; color: var(--z-text-3); line-height: 1.5; }
+        @media (max-width: 860px) {
+            .feature-row { grid-template-columns: 1fr; gap: 2.5rem; }
+            .feature-row.flip .feat-text { order: 1; }
+            .feature-row.flip .feat-visual { order: 2; }
+            .about-big-stats { grid-template-columns: 1fr 1fr; }
+            .tech-logos { grid-template-columns: repeat(2,1fr); }
+        }
+    </style>
 </head>
 <body>
-    <!-- Cosmic Background Layers -->
-    <div class="aurora-layer">
-        <div class="aurora-band-1"></div>
-        <div class="aurora-band-2"></div>
+<div class="page-transition-overlay" id="pageTransition"></div>
+<div class="site-reactive-grid"></div>
+<canvas id="particleCanvas"></canvas>
+<nav class="navbar" id="navbar">
+    <div class="container">
+        <a href="index.html" class="nav-brand">
+            <div class="brand-icon"><svg viewBox="0 0 40 40" fill="none"><path d="M20 4L36 12V28L20 36L4 28V12L20 4Z" stroke="url(#bGab)" stroke-width="2" fill="none"/><path d="M20 10L30 16V26L20 32L10 26V16L20 10Z" fill="url(#bGab)" opacity="0.15"/><path d="M12 20L18 14L24 22L32 12" stroke="url(#bGab)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="bGab" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#00ff87"/><stop offset="100%" stop-color="#60efff"/></linearGradient></defs></svg></div>
+            <span class="brand-text">Zenith</span>
+        </a>
+        <div class="nav-links" id="navLinks">
+            <a href="index.html" class="nav-link"><i class="fas fa-house"></i> Home</a>
+            <a href="index.html#features" class="nav-link">How It Works</a>
+            <a href="index.html#strategy" class="nav-link">Strategy</a>
+            <a href="index.html#performance" class="nav-link">Performance</a>
+            <a href="docs.html" class="nav-link">Docs</a>
+            <a href="about.html" class="nav-link active">About</a>
+            <a href="login.html" class="nav-link nav-link-border">Login / Register</a>
+        </div>
+        <div class="nav-actions" id="navActions">
+            <a href="dashboard.html" class="nav-btn nav-btn-primary">Launch Dashboard <i class="fas fa-arrow-right"></i></a>
+            <a href="signup.html" class="nav-btn nav-btn-outline">Get Started</a>
+        </div>
+        <button class="mobile-toggle" id="mobileToggle"><span></span><span></span><span></span></button>
     </div>
-    <div class="ghost-pairs-layer" id="ghostPairsLayer"></div>
-    <div class="orbital-system">
-        <div class="orbital-ring-1"></div>
-        <div class="orbital-ring-2"></div>
+</nav>
+
+<!-- HERO -->
+<section class="hero" style="min-height:72vh">
+    <div class="hero-spotlight"></div>
+    <div class="hero-overlay"></div>
+    <div class="bg-glyphs">
+        <span class="bg-glyph" style="top:20%;left:8%;--rot:-4deg;--sz:1.8rem;--blur:2px;--op:0.05;--react:0.3">EUR/USD</span>
+        <span class="bg-glyph" style="top:58%;left:6%;--rot:3deg;--sz:1.3rem;--blur:0px;--op:0.06;--react:0.2">+2.4%</span>
+        <span class="bg-glyph" style="top:35%;left:12%;--rot:-3deg;--sz:1.1rem;--blur:0px;--op:0.05;--react:0.24">BOS</span>
+        <span class="bg-glyph" style="top:75%;left:20%;--rot:4deg;--sz:1.5rem;--blur:0px;--op:0.06;--react:0.18">OB Zone</span>
+        <span class="bg-glyph" style="top:18%;right:8%;--rot:5deg;--sz:1.8rem;--blur:2px;--op:0.05;--react:0.28">XAU/USD</span>
+        <span class="bg-glyph" style="top:52%;right:6%;--rot:-3deg;--sz:1.2rem;--blur:0px;--op:0.06;--react:0.2">ICT/SMC</span>
+        <span class="bg-glyph" style="top:70%;right:14%;--rot:2deg;--sz:1.4rem;--blur:0px;--op:0.06;--react:0.24">WR 46%</span>
     </div>
-    <div class="cursor-glow" id="cursorGlow"></div>
-
-    <!-- Navigation -->
-    <nav class="navbar">
-        <div class="container">
-            <a href="index.html" class="logo">Zenith</a>
-            <ul class="nav-menu">
-                <li><a href="index.html">Home</a></li>
-                <li><a href="dashboard.html">Dashboard</a></li>
-                <li><a href="docs.html">Docs</a></li>
-                <li><a href="about.html" class="active">About</a></li>
-                <li><a href="dashboard.html" class="btn btn-primary">Launch App</a></li>
-            </ul>
+    <div class="container hero-container" style="justify-content:center">
+        <div class="hero-left" style="text-align:center;align-items:center;max-width:880px;margin:0 auto">
+            <div class="about-hero-tagline reveal-up"><i class="fas fa-code-branch"></i>Open Source · ICT / Smart Money Concepts</div>
+            <h1 class="hero-title reveal-up" data-delay="100">Built different.<br><span class="title-gradient">Trades smarter.</span></h1>
+            <p class="hero-subtitle reveal-up" data-delay="180" style="text-align:center;margin:0 auto 2.5rem;max-width:680px">Zenith is an algorithmic trading platform engineered from scratch around institutional order flow concepts — BOS detection, Order Block profiling, kill zone sessions, and multi-factor confluence scoring.</p>
+            <div class="hero-cta reveal-up" data-delay="300" style="justify-content:center">
+                <a href="docs.html" class="btn-glow"><span class="btn-glow-text">Read the Docs</span><span class="btn-glow-icon"><i class="fas fa-book-open"></i></span></a>
+                <a href="https://github.com/Ravenko123/TradingBot" target="_blank" class="btn-outline-hero"><i class="fab fa-github"></i> GitHub</a>
+            </div>
         </div>
-    </nav>
+    </div>
+    <div class="hero-bottom-bar">
+        <div class="hero-follow"><span>Follow Us</span><div class="hero-socials"><a href="#"><i class="fab fa-discord"></i></a><a href="#"><i class="fab fa-telegram"></i></a><a href="https://github.com/Ravenko123/TradingBot" target="_blank"><i class="fab fa-github"></i></a></div></div>
+        <div class="hero-scroll-cue"><span>Explore</span><i class="fas fa-arrow-down"></i></div>
+    </div>
+</section>
 
-    <!-- About Hero -->
-    <section class="about-hero">
-        <div class="container">
-            <h1 class="gradient-text">About Zenith Trading Bot</h1>
-            <p class="lead">An algorithmic trading platform with multi-mode backtesting, real-time dashboards, and MT5 integration.</p>
-        </div>
-    </section>
+<!-- BIG NUMBERS STRIP -->
+<div class="container reveal-up">
+    <div class="about-big-stats">
+        <div class="about-big-stat"><div class="about-big-stat-num">7</div><div class="about-big-stat-lbl">Markets</div></div>
+        <div class="about-big-stat"><div class="about-big-stat-num">1,277</div><div class="about-big-stat-lbl">Backtest Trades</div></div>
+        <div class="about-big-stat"><div class="about-big-stat-num">7/7</div><div class="about-big-stat-lbl">Profitable Symbols</div></div>
+        <div class="about-big-stat"><div class="about-big-stat-num">+7,131%</div><div class="about-big-stat-lbl">Best Symbol Return</div></div>
+    </div>
+</div>
 
-    <!-- Project Overview -->
-    <section class="section">
-        <div class="container">
-            <div class="content-grid">
-                <div class="content-text">
-                    <h2>Project Overview</h2>
-                    <p>Zenith Trading Bot is an algorithmic trading system built around ICT/SMC (Inner Circle Trader / Smart Money Concepts) methodology. It detects Break of Structure events, identifies Order Block zones, and enters pullback trades with multi-factor confluence scoring on the M15 timeframe.</p>
-                    <p>The system implements a state-machine signal engine with 7 confluence factors (BOS displacement, FVG, liquidity sweeps, session kill zones, premium/discount zones, rejection wicks, OB strength), break-even trailing, and ATR-based risk management. All signals are validated with split-sample backtesting and walk-forward analysis on real MT5 data.</p>
-                    <p>This project combines quantitative finance principles with software engineering best practices, demonstrating data-driven decision making, statistical analysis, and system architecture design for automated trading systems.</p>
+<!-- FEATURE ROWS -->
+<section style="padding:4rem 0 8rem">
+    <div class="container">
+        <!-- Row 1: Strategy Engine -->
+        <div class="feature-row reveal-up">
+            <div class="feat-text">
+                <span class="feat-text-tag">Core Engine</span>
+                <h2 class="feat-title">ICT/SMC Signal Engine</h2>
+                <p class="feat-desc">A full state-machine strategy engine based on Inner Circle Trader methodology. Every trade entry is gated by a Break of Structure event, followed by identification of a valid Order Block, then filtered through a multi-factor confluence score. Minimum score of 3 required before any execution.</p>
+                <p class="feat-desc" style="margin-top:-0.5rem">Runs exclusively on the M15 timeframe during active kill zone sessions — London open and New York open — where institutional order flow is highest.</p>
+                <div class="feat-chips">
+                    <span class="feat-chip">ICT Methodology</span>
+                    <span class="feat-chip">State Machine</span>
+                    <span class="feat-chip">M15 Only</span>
+                    <span class="feat-chip">Kill Zones</span>
+                    <span class="feat-chip">7 Symbols</span>
                 </div>
-                <div class="content-stats">
-                    <div class="stat-card">
-                        <h3>7</h3>
-                        <p>Markets Traded</p>
-                    </div>
-                    <div class="stat-card">
-                        <h3>1,277</h3>
-                        <p>Backtest Trades</p>
-                    </div>
-                    <div class="stat-card">
-                        <h3>7/7</h3>
-                        <p>Symbols Profitable</p>
-                    </div>
-                    <div class="stat-card">
-                        <h3>180</h3>
-                        <p>Days Backtested</p>
-                    </div>
+            </div>
+            <div class="feat-visual">
+                <div class="confluence-grid">
+                    <div class="conf-item"><div class="conf-icon"><i class="fas fa-arrow-trend-up"></i></div><span class="conf-name">BOS Candle</span><span class="conf-val">mandatory</span></div>
+                    <div class="conf-item"><div class="conf-icon"><i class="fas fa-layer-group"></i></div><span class="conf-name">Order Block</span><span class="conf-val">+1 score</span></div>
+                    <div class="conf-item"><div class="conf-icon"><i class="fas fa-code-branch"></i></div><span class="conf-name">Fair Value Gap</span><span class="conf-val">+1 score</span></div>
+                    <div class="conf-item"><div class="conf-icon"><i class="fas fa-clock"></i></div><span class="conf-name">Kill Zone</span><span class="conf-val">+1 score</span></div>
+                    <div class="conf-item"><div class="conf-icon"><i class="fas fa-droplet"></i></div><span class="conf-name">Liq. Sweep</span><span class="conf-val">+1 score</span></div>
+                    <div class="conf-item"><div class="conf-icon"><i class="fas fa-chart-bar"></i></div><span class="conf-name">OB Strength</span><span class="conf-val">+1 score</span></div>
+                </div>
+                <div class="feat-stat-box" style="margin-top:0.25rem">
+                    <span class="feat-stat-label">Minimum entry confluence</span>
+                    <span class="feat-stat-val">≥ 3 signals</span>
                 </div>
             </div>
         </div>
-    </section>
 
-    <!-- Technology Stack -->
-    <section class="section bg-gradient">
-        <div class="container">
-            <h2 class="text-center">Technology Stack</h2>
-            <p class="text-center subtitle">Built with modern technologies and best practices</p>
-            
-            <div class="tech-grid">
-                <div class="tech-card">
-                    <div class="tech-icon">🐍</div>
-                    <h3>Python</h3>
-                    <p>Core trading engine, strategies, and backtesting framework</p>
-                    <ul class="tech-list">
-                        <li>NumPy & Pandas for data analysis</li>
-                        <li>TA-Lib for technical indicators</li>
-                        <li>MetaTrader5 library for broker integration</li>
-                    </ul>
-                </div>
-
-                <div class="tech-card">
-                    <div class="tech-icon">⚡</div>
-                    <h3>Flask</h3>
-                    <p>RESTful API backend for real-time data access</p>
-                    <ul class="tech-list">
-                        <li>CORS-enabled API endpoints</li>
-                        <li>Real-time metrics and trade data</li>
-                        <li>Bot control and monitoring</li>
-                    </ul>
-                </div>
-
-                <div class="tech-card">
-                    <div class="tech-icon">🌐</div>
-                    <h3>Web Technologies</h3>
-                    <p>Modern frontend with responsive design</p>
-                    <ul class="tech-list">
-                        <li>HTML5, CSS3, JavaScript</li>
-                        <li>Chart.js for data visualization</li>
-                        <li>CSS Grid & Flexbox layouts</li>
-                    </ul>
-                </div>
-
-                <div class="tech-card">
-                    <div class="tech-icon">📱</div>
-                    <h3>Telegram Bot</h3>
-                    <p>Mobile monitoring and remote control</p>
-                    <ul class="tech-list">
-                        <li>Real-time notifications</li>
-                        <li>Command-based controls</li>
-                        <li>Trade alerts and updates</li>
-                    </ul>
-                </div>
-
-                <div class="tech-card">
-                    <div class="tech-icon">📊</div>
-                    <h3>MetaTrader 5</h3>
-                    <p>Professional trading platform integration</p>
-                    <ul class="tech-list">
-                        <li>Direct market access</li>
-                        <li>Order execution</li>
-                        <li>Historical data retrieval</li>
-                    </ul>
-                </div>
-
-                <div class="tech-card">
-                    <div class="tech-icon">🔧</div>
-                    <h3>Tools & Libraries</h3>
-                    <p>Supporting infrastructure and utilities</p>
-                    <ul class="tech-list">
-                        <li>Git for version control</li>
-                        <li>pytest for unit testing</li>
-                        <li>Custom logging framework</li>
-                    </ul>
+        <!-- Row 2: Risk Management (flipped) -->
+        <div class="feature-row flip reveal-up">
+            <div class="feat-visual">
+                <div class="feat-stat-box"><span class="feat-stat-label">Risk per trade</span><span class="feat-stat-val">2.0%</span></div>
+                <div class="feat-stat-box"><span class="feat-stat-label">Stop loss type</span><span class="feat-stat-val white">ATR-based</span></div>
+                <div class="feat-stat-box"><span class="feat-stat-label">Break-even triggered at</span><span class="feat-stat-val">1R profit</span></div>
+                <div class="feat-stat-box"><span class="feat-stat-label">Daily drawdown circuit breaker</span><span class="feat-stat-val cyan">5.0%</span></div>
+                <div class="feat-stat-box"><span class="feat-stat-label">Margin guard threshold</span><span class="feat-stat-val white">20% usage</span></div>
+            </div>
+            <div class="feat-text">
+                <span class="feat-text-tag">Risk Management</span>
+                <h2 class="feat-title">Built to protect capital first</h2>
+                <p class="feat-desc">Every position is sized using the exact ATR stop distance — not a fixed pip amount. This means lot size adapts to volatility automatically. At 2% risk per trade, position sizing is always correct regardless of market condition.</p>
+                <p class="feat-desc" style="margin-top:-0.5rem">Break-even logic moves the stop loss to entry price (+1 pip spread) the moment the trade reaches 1R profit — turning every early winner into a risk-free trade. A daily drawdown circuit breaker halts all activity if equity drops 5% from session open.</p>
+                <div class="feat-chips">
+                    <span class="feat-chip">ATR Stops</span>
+                    <span class="feat-chip">Break-Even</span>
+                    <span class="feat-chip">2% Risk</span>
+                    <span class="feat-chip">DD Circuit Breaker</span>
                 </div>
             </div>
         </div>
-    </section>
 
-    <!-- Features & Architecture -->
-    <section class="section">
-        <div class="container">
-            <h2 class="text-center">System Architecture</h2>
-            <p class="text-center subtitle">Modular design for scalability and maintainability</p>
-            
-            <div class="architecture-grid">
-                <div class="arch-card">
-                    <h3>Core Engine</h3>
-                    <ul>
-                        <li>Strategy execution framework</li>
-                        <li>Order management system</li>
-                        <li>Risk management module</li>
-                        <li>Position tracking</li>
-                        <li>Event-driven architecture</li>
-                    </ul>
-                </div>
-
-                <div class="arch-card">
-                    <h3>Data Layer</h3>
-                    <ul>
-                        <li>Real-time market data feeds</li>
-                        <li>Historical data management</li>
-                        <li>SQLite database with WAL mode</li>
-                        <li>Trade logging system</li>
-                        <li>Performance metrics storage</li>
-                    </ul>
-                </div>
-
-                <div class="arch-card">
-                    <h3>Strategy Layer</h3>
-                    <ul>
-                        <li>Pluggable strategy interface</li>
-                        <li>Multiple timeframe analysis</li>
-                        <li>Technical indicator library</li>
-                        <li>Signal generation system</li>
-                        <li>Strategy configuration management</li>
-                    </ul>
-                </div>
-
-                <div class="arch-card">
-                    <h3>Backtesting Engine</h3>
-                    <ul>
-                        <li>Event-driven simulation</li>
-                        <li>Realistic order execution modeling</li>
-                        <li>Comprehensive metrics calculation</li>
-                        <li>Parameter optimization tools</li>
-                        <li>Visual performance analysis</li>
-                    </ul>
+        <!-- Row 3: Backtesting -->
+        <div class="feature-row reveal-up">
+            <div class="feat-text">
+                <span class="feat-text-tag">Validation</span>
+                <h2 class="feat-title">Three-mode backtesting</h2>
+                <p class="feat-desc">Results aren't cherry-picked — all performance metrics come from out-of-sample data. The 70/30 split backtest trains parameters on the first 70% of historical data and tests on the remaining 30% with zero look-ahead bias.</p>
+                <p class="feat-desc" style="margin-top:-0.5rem">Walk-forward testing goes further — rolling optimization windows ensure the strategy adapts correctly without overfitting. All 7 symbols pass all three backtesting modes with positive profit factor.</p>
+                <div class="feat-chips">
+                    <span class="feat-chip">70/30 Split</span>
+                    <span class="feat-chip">Walk-Forward</span>
+                    <span class="feat-chip">Out-of-Sample</span>
+                    <span class="feat-chip">Real MT5 Data</span>
                 </div>
             </div>
-        </div>
-    </section>
-
-    <!-- Research & Development -->
-    <section class="section bg-gradient">
-        <div class="container">
-            <h2 class="text-center">Research & Methodology</h2>
-            <p class="text-center subtitle">Evidence-based strategy development and testing</p>
-            
-            <div class="research-grid">
-                <div class="research-card">
-                    <div class="research-number">01</div>
-                    <h3>Strategy Research</h3>
-                    <p>In-depth study of ICT/SMC methodology — Break of Structure, Order Blocks, Fair Value Gaps, liquidity sweeps, premium/discount zones, and kill zone session timing. Implemented as a multi-bar state machine with confluence scoring.</p>
-                </div>
-
-                <div class="research-card">
-                    <div class="research-number">02</div>
-                    <h3>Parameter Optimization</h3>
-                    <p>Systematic parameter sweeps across multiple dimensions to identify optimal configurations. Tested 1000+ parameter combinations to maximize risk-adjusted returns.</p>
-                </div>
-
-                <div class="research-card">
-                    <div class="research-number">03</div>
-                    <h3>Backtesting Validation</h3>
-                    <p>Rigorous backtesting on historical data spanning multiple market conditions. Walk-forward analysis and out-of-sample testing to avoid overfitting.</p>
-                </div>
-
-                <div class="research-card">
-                    <div class="research-number">04</div>
-                    <h3>Risk Analysis</h3>
-                    <p>Comprehensive risk metrics including Sharpe ratio, max drawdown, profit factor, and win rate. Monte Carlo simulations for robustness testing.</p>
-                </div>
+            <div class="feat-visual">
+                <div class="feat-stat-box"><span class="feat-stat-label">GBPJPY return (180 days)</span><span class="feat-stat-val">+7,131%</span></div>
+                <div class="feat-stat-box"><span class="feat-stat-label">EURUSD return</span><span class="feat-stat-val">+1,220%</span></div>
+                <div class="feat-stat-box"><span class="feat-stat-label">XAUUSD return</span><span class="feat-stat-val">+1,040%</span></div>
+                <div class="feat-stat-box"><span class="feat-stat-label">Average profit factor</span><span class="feat-stat-val cyan">2.06</span></div>
+                <div class="feat-stat-box"><span class="feat-stat-label">All 7 symbols profitable</span><span class="feat-stat-val">7 / 7</span></div>
             </div>
         </div>
-    </section>
+    </div>
+</section>
 
-    <!-- Results & Performance -->
-    <section class="section">
-        <div class="container">
-            <h2 class="text-center">Performance Results</h2>
-            <p class="text-center subtitle">Backtest results demonstrate strategy effectiveness</p>
-            
-            <div class="results-grid">
-                <div class="result-card">
-                    <h3>GBPJPY — ICT/SMC</h3>
-                    <div class="result-metrics">
-                        <div class="result-metric">
-                            <span class="metric-label">Total Return</span>
-                            <span class="metric-value positive">+7,131%</span>
-                        </div>
-                        <div class="result-metric">
-                            <span class="metric-label">Win Rate</span>
-                            <span class="metric-value">45.4%</span>
-                        </div>
-                        <div class="result-metric">
-                            <span class="metric-label">Profit Factor</span>
-                            <span class="metric-value">3.09</span>
-                        </div>
-                        <div class="result-metric">
-                            <span class="metric-label">Total Trades</span>
-                            <span class="metric-value">174</span>
-                        </div>
-                    </div>
-                    <p class="result-note">M15 timeframe, 180-day split backtest (70/30), out-of-sample test set. ICT/SMC with confluence scoring.</p>
-                </div>
-
-                <div class="result-card">
-                    <h3>XAUUSD — ICT/SMC</h3>
-                    <div class="result-metrics">
-                        <div class="result-metric">
-                            <span class="metric-label">Total Return</span>
-                            <span class="metric-value positive">+1,040%</span>
-                        </div>
-                        <div class="result-metric">
-                            <span class="metric-label">Win Rate</span>
-                            <span class="metric-value">43.9%</span>
-                        </div>
-                        <div class="result-metric">
-                            <span class="metric-label">Profit Factor</span>
-                            <span class="metric-value">1.87</span>
-                        </div>
-                        <div class="result-metric">
-                            <span class="metric-label">Total Trades</span>
-                            <span class="metric-value">155</span>
-                        </div>
-                    </div>
-                    <p class="result-note">M15 timeframe, 180-day split backtest (70/30), out-of-sample test set. ICT/SMC with confluence scoring.</p>
-                </div>
-            </div>
-
-            <div class="disclaimer">
-                <p><strong>Important Disclaimer:</strong> Past performance is not indicative of future results. These backtest results represent simulated performance and do not account for real-world factors such as slippage, commissions, market impact, and psychological factors. This is an academic project for educational purposes only and should not be considered investment advice.</p>
-            </div>
+<!-- TECH STACK -->
+<section style="padding:6rem 0;background:linear-gradient(180deg,transparent,rgba(0,255,135,0.02),transparent)">
+    <div class="container">
+        <div class="section-header">
+            <span class="section-tag reveal-up">Stack</span>
+            <h2 class="section-title reveal-up">Built With</h2>
+            <p class="section-desc reveal-up">Modern, production-grade tooling from raw data all the way to execution.</p>
         </div>
-    </section>
+        <div class="tech-logos reveal-up">
+            <div class="tech-logo-card"><div class="tech-logo-icon"><i class="fab fa-python"></i></div><div class="tech-logo-name">Python 3.10+</div><div class="tech-logo-desc">Core engine, strategy, backtesting, risk</div></div>
+            <div class="tech-logo-card"><div class="tech-logo-icon"><i class="fas fa-server"></i></div><div class="tech-logo-name">Flask API</div><div class="tech-logo-desc">REST backend with JWT auth + CORS</div></div>
+            <div class="tech-logo-card"><div class="tech-logo-icon"><i class="fas fa-globe"></i></div><div class="tech-logo-name">Web Dashboard</div><div class="tech-logo-desc">Real-time UI with Chart.js equity curves</div></div>
+            <div class="tech-logo-card"><div class="tech-logo-icon"><i class="fab fa-telegram"></i></div><div class="tech-logo-name">Telegram</div><div class="tech-logo-desc">Mobile alerts + remote bot control</div></div>
+            <div class="tech-logo-card"><div class="tech-logo-icon"><i class="fas fa-chart-candlestick"></i></div><div class="tech-logo-name">MetaTrader 5</div><div class="tech-logo-desc">Live execution + historical OHLCV data</div></div>
+            <div class="tech-logo-card"><div class="tech-logo-icon"><i class="fas fa-database"></i></div><div class="tech-logo-name">SQLite WAL</div><div class="tech-logo-desc">Trade logging, audit trail, backtest results</div></div>
+        </div>
+    </div>
+</section>
 
-    <!-- Academic Context -->
-    <section class="section bg-gradient">
-        <div class="container">
-            <h2 class="text-center">Academic Context</h2>
-            <p class="text-center subtitle">Project objectives and learning outcomes</p>
-            
-            <div class="academic-content">
-                <div class="academic-section">
-                    <h3>Learning Objectives</h3>
-                    <ul>
-                        <li>Design and implement complex software systems</li>
-                        <li>Apply object-oriented programming principles</li>
-                        <li>Work with financial APIs and real-time data</li>
-                        <li>Develop comprehensive testing and validation frameworks</li>
-                        <li>Create professional web interfaces and dashboards</li>
-                        <li>Implement event-driven architectures</li>
-                        <li>Manage large-scale data processing</li>
-                    </ul>
+<!-- PERFORMANCE TABLE -->
+<section style="padding:6rem 0">
+    <div class="container">
+        <div class="section-header">
+            <span class="section-tag reveal-up">Results</span>
+            <h2 class="section-title reveal-up">Backtest Performance</h2>
+            <p class="section-desc reveal-up">Out-of-sample · 180-day split · 2% risk · M15 · compounding</p>
+        </div>
+        <div class="perf-showcase">
+            <div class="glass-card perf-card reveal-up">
+                <div class="perf-card-header">
+                    <span class="section-tag" style="margin:0;font-size:0.65rem">7 / 7 Symbols Profitable</span>
+                    <span class="perf-pair" style="font-family:var(--font-mono);font-size:0.78rem">Split 70/30 · Out-of-Sample</span>
                 </div>
-
-                <div class="academic-section">
-                    <h3>Skills Demonstrated</h3>
-                    <ul>
-                        <li><strong>Software Engineering:</strong> Modular architecture, design patterns, code organization</li>
-                        <li><strong>Financial Analysis:</strong> Trading strategies, risk management, performance metrics</li>
-                        <li><strong>Data Science:</strong> Time series analysis, statistical modeling, backtesting</li>
-                        <li><strong>Web Development:</strong> Full-stack development, API design, responsive UI</li>
-                        <li><strong>DevOps:</strong> Logging, monitoring, error handling, deployment</li>
-                        <li><strong>Documentation:</strong> Technical writing, API documentation, user guides</li>
-                    </ul>
+                <div style="overflow-x:auto">
+                    <table style="width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:0.86rem">
+                        <thead><tr>
+                            <th style="padding:10px 14px;text-align:left;color:var(--z-text-3);font-size:0.63rem;text-transform:uppercase;letter-spacing:1.2px;border-bottom:1px solid rgba(255,255,255,0.04)">Symbol</th>
+                            <th style="padding:10px 14px;text-align:right;color:var(--z-text-3);font-size:0.63rem;text-transform:uppercase;letter-spacing:1.2px;border-bottom:1px solid rgba(255,255,255,0.04)">Return</th>
+                            <th style="padding:10px 14px;text-align:right;color:var(--z-text-3);font-size:0.63rem;text-transform:uppercase;letter-spacing:1.2px;border-bottom:1px solid rgba(255,255,255,0.04)">Win Rate</th>
+                            <th style="padding:10px 14px;text-align:right;color:var(--z-text-3);font-size:0.63rem;text-transform:uppercase;letter-spacing:1.2px;border-bottom:1px solid rgba(255,255,255,0.04)">PF</th>
+                            <th style="padding:10px 14px;text-align:right;color:var(--z-text-3);font-size:0.63rem;text-transform:uppercase;letter-spacing:1.2px;border-bottom:1px solid rgba(255,255,255,0.04)">Trades</th>
+                        </tr></thead>
+                        <tbody>
+                            <tr><td style="padding:13px 14px;color:var(--z-text);font-weight:600">GBPJPY</td><td style="padding:13px 14px;text-align:right;color:var(--z-green);font-weight:700">+7,131%</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-2)">45.4%</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-2)">3.09</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-3)">174</td></tr>
+                            <tr style="background:rgba(255,255,255,0.01)"><td style="padding:13px 14px;color:var(--z-text);font-weight:600">EURUSD</td><td style="padding:13px 14px;text-align:right;color:var(--z-green);font-weight:700">+1,220%</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-2)">38.3%</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-2)">1.97</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-3)">196</td></tr>
+                            <tr><td style="padding:13px 14px;color:var(--z-text);font-weight:600">XAUUSD</td><td style="padding:13px 14px;text-align:right;color:var(--z-green);font-weight:700">+1,040%</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-2)">43.9%</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-2)">1.87</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-3)">155</td></tr>
+                            <tr style="background:rgba(255,255,255,0.01)"><td style="padding:13px 14px;color:var(--z-text);font-weight:600">NAS100</td><td style="padding:13px 14px;text-align:right;color:var(--z-green);font-weight:700">+879%</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-2)">40.3%</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-2)">1.99</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-3)">183</td></tr>
+                            <tr><td style="padding:13px 14px;color:var(--z-text);font-weight:600">GBPUSD</td><td style="padding:13px 14px;text-align:right;color:var(--z-green);font-weight:700">+812%</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-2)">35.8%</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-2)">2.10</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-3)">212</td></tr>
+                            <tr style="background:rgba(255,255,255,0.01)"><td style="padding:13px 14px;color:var(--z-text);font-weight:600">USDJPY</td><td style="padding:13px 14px;text-align:right;color:var(--z-green);font-weight:700">+387%</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-2)">34.1%</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-2)">1.56</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-3)">178</td></tr>
+                            <tr><td style="padding:13px 14px;color:var(--z-text);font-weight:600">BTCUSD</td><td style="padding:13px 14px;text-align:right;color:var(--z-green);font-weight:700">+376%</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-2)">36.2%</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-2)">1.87</td><td style="padding:13px 14px;text-align:right;color:var(--z-text-3)">179</td></tr>
+                        </tbody>
+                    </table>
                 </div>
-
-                <div class="academic-section">
-                    <h3>Project Scope</h3>
-                    <p>This project encompasses:</p>
-                    <ul>
-                        <li>Multiple months of development</li>
-                        <li>Full-stack web application with API backend</li>
-                        <li>Documentation and user guides</li>
-                        <li>Testing and validation across multiple modes</li>
-                        <li>Custom UI/UX design</li>
-                        <li>Real-world integration with trading platforms</li>
-                    </ul>
-                </div>
-
-                <div class="academic-section">
-                    <h3>Future Enhancements</h3>
-                    <ul>
-                        <li>Machine learning-based strategy adaptation</li>
-                        <li>Advanced portfolio management features</li>
-                        <li>Multi-account support</li>
-                        <li>WebSocket integration for real-time updates</li>
-                        <li>Mobile application development</li>
-                        <li>Cloud deployment and scalability</li>
-                    </ul>
-                </div>
+                <p style="font-size:0.75rem;color:var(--z-text-3);margin-top:1.5rem;line-height:1.7;padding:1rem;background:rgba(0,0,0,0.2);border-radius:8px"><i class="fas fa-circle-info" style="color:var(--z-cyan);margin-right:6px"></i>180-day split backtest (70/30 train/test). Out-of-sample results only. Past performance does not guarantee future results. Educational project — not investment advice.</p>
             </div>
         </div>
-    </section>
+    </div>
+</section>
 
-    <!-- Contact -->
-    <section class="section">
-        <div class="container text-center">
-            <h2>Get in Touch</h2>
-            <p class="subtitle">Questions about this project?</p>
-            <div class="contact-info">
-                <p>📧 GitHub: <a href="https://github.com/Ravenko123/TradingBot">github.com/Ravenko123/TradingBot</a></p>
-                <p>� Telegram: @zenithbot</p>
-                <p>� Discord: discord.gg/zenith</p>
+<!-- CTA -->
+<section class="cta-section">
+    <div class="bg-glyphs section-glyphs"><span class="bg-glyph" style="top:15%;left:10%;--rot:-4deg;--sz:1.5rem;--blur:0px;--op:0.05;--fd:9s">&#x2192;</span><span class="bg-glyph" style="top:50%;left:6%;--rot:3deg;--sz:1.6rem;--blur:1px;--op:0.04;--fd:11s">$</span><span class="bg-glyph" style="top:80%;left:15%;--rot:-2deg;--sz:1.1rem;--blur:0px;--op:0.05;--fd:8s">launch</span><span class="bg-glyph" style="top:20%;right:8%;--rot:5deg;--sz:1.3rem;--blur:0px;--op:0.05;--fd:10s">&gt;&gt;&gt;</span><span class="bg-glyph" style="top:55%;right:10%;--rot:-3deg;--sz:1.4rem;--blur:0px;--op:0.04;--fd:12s">$$</span></div>
+    <div class="cta-bg-orbs"><div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div></div>
+    <div class="container"><div class="cta-content reveal-up"><h2>Ready to see it in action?</h2><p>Launch the dashboard, run backtests, and explore the data yourself.</p><a href="dashboard.html" class="btn-glow btn-glow-lg"><span class="btn-glow-text">Launch Dashboard</span><span class="btn-glow-icon"><i class="fas fa-rocket"></i></span></a></div></div>
+</section>
+
+<!-- FOOTER -->
+<footer class="site-footer">
+    <div class="container">
+        <div class="footer-grid">
+            <div class="footer-brand-col">
+                <a href="index.html" class="nav-brand"><div class="brand-icon"><svg viewBox="0 0 40 40" fill="none"><path d="M20 4L36 12V28L20 36L4 28V12L20 4Z" stroke="url(#bGab2)" stroke-width="2" fill="none"/><path d="M12 20L18 14L24 22L32 12" stroke="url(#bGab2)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="bGab2" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#00ff87"/><stop offset="100%" stop-color="#60efff"/></linearGradient></defs></svg></div><span class="brand-text">Zenith</span></a>
+                <p class="footer-desc">Automated algorithmic trading with multi-symbol backtesting and robustness verification.</p>
+                <div class="footer-socials"><a href="https://github.com/Ravenko123/TradingBot" target="_blank"><i class="fab fa-github"></i></a><a href="#"><i class="fab fa-telegram"></i></a><a href="#"><i class="fab fa-discord"></i></a></div>
             </div>
-            <a href="docs.html" class="btn btn-primary">Read Documentation</a>
+            <div class="footer-col"><h4>Product</h4><a href="index.html#features">Features</a><a href="index.html#strategy">Strategy</a><a href="index.html#pricing">Pricing</a><a href="dashboard.html">Dashboard</a></div>
+            <div class="footer-col"><h4>Resources</h4><a href="docs.html">Documentation</a><a href="about.html">About</a><a href="https://github.com/Ravenko123/TradingBot" target="_blank">GitHub</a></div>
+            <div class="footer-col"><h4>Account</h4><a href="login.html">Login</a><a href="signup.html">Sign Up</a><a href="dashboard.html">Dashboard</a></div>
         </div>
-    </section>
-
-    <!-- Footer -->
-    <footer class="footer">
-        <div class="container">
-            <p>&copy; 2025 Zenith Trading Bot. Academic Project.</p>
-            <p><a href="index.html">Home</a> | <a href="docs.html">Documentation</a> | <a href="about.html">About</a> | <a href="https://github.com">GitHub</a></p>
-        </div>
-    </footer>
-
-    <script src="js/main.js"></script>
+        <div class="footer-bottom"><p>&copy; 2026 Zenith Trading Bot. Built for educational purposes.</p></div>
+    </div>
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="js/main.js?v=20260226-5"></script>
 </body>
 </html>
+
+

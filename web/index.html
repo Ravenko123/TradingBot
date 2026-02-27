@@ -9,11 +9,12 @@
     <link rel="apple-touch-icon" href="/favicon.svg?v=20260225-2">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="css/style.css?v=20260226-3">
+    <link rel="stylesheet" href="css/style.css?v=20260226-12">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
+    <div class="page-transition-overlay" id="pageTransition"></div>
     <div class="site-reactive-grid"></div>
     <canvas id="particleCanvas"></canvas>
 
@@ -171,93 +172,78 @@
     </section>
 
     <!-- features -->
-    <section id="features" class="features-section">
+    <section id="features" class="features-section prop-why-section">
         <div class="section-glow"></div>
-        <div class="bg-glyphs section-glyphs">
-            <span class="bg-glyph" style="top:12%;left:8%;--rot:-4deg;--sz:1.1rem;--blur:0px;--op:0.05;--fd:9s;--fi:0">MT5</span>
-            <span class="bg-glyph" style="top:28%;left:14%;--rot:3deg;--sz:1.4rem;--blur:1px;--op:0.04;--fd:11s;--fi:1">API</span>
-            <span class="bg-glyph" style="top:55%;left:6%;--rot:-6deg;--sz:1.2rem;--blur:0px;--op:0.05;--fd:8s;--fi:2">&lt;/&gt;</span>
-            <span class="bg-glyph" style="top:75%;left:18%;--rot:2deg;--sz:1rem;--blur:0px;--op:0.04;--fd:10s;--fi:3">{ }</span>
-            <span class="bg-glyph" style="top:18%;right:10%;--rot:5deg;--sz:1.3rem;--blur:0px;--op:0.05;--fd:9s;--fi:4">M15</span>
-            <span class="bg-glyph" style="top:42%;right:7%;--rot:-3deg;--sz:1.1rem;--blur:1px;--op:0.04;--fd:12s;--fi:5">OB</span>
-            <span class="bg-glyph" style="top:65%;right:15%;--rot:4deg;--sz:1.25rem;--blur:0px;--op:0.05;--fd:8s;--fi:6">ATR</span>
-            <span class="bg-glyph" style="top:85%;right:22%;--rot:-2deg;--sz:0.95rem;--blur:0px;--op:0.04;--fd:10s;--fi:7">signal()</span>
-            <span class="bg-glyph" style="top:8%;left:42%;--rot:1deg;--sz:1rem;--blur:0px;--op:0.04;--fd:11s;--fi:8">FVG</span>
-            <span class="bg-glyph" style="top:90%;left:38%;--rot:-5deg;--sz:1.15rem;--blur:0px;--op:0.04;--fd:9s;--fi:9">7/7</span>
+        <div class="bg-glyphs section-glyphs" aria-hidden="true">
+            <span class="bg-glyph glyph-geo" style="top:14%;left:10%;--rot:-6deg;--sz:1.3rem;--op:0.08;--fd:9s;--fi:0">✦</span>
+            <span class="bg-glyph" style="top:24%;left:20%;--rot:3deg;--sz:1.05rem;--op:0.05;--fd:10s;--fi:1">EMA</span>
+            <span class="bg-glyph glyph-geo" style="top:20%;right:12%;--rot:7deg;--sz:1.2rem;--op:0.08;--fd:8s;--fi:2">◇</span>
+            <span class="bg-glyph" style="top:34%;right:16%;--rot:-4deg;--sz:1rem;--op:0.05;--fd:11s;--fi:3">ADX</span>
+            <span class="bg-glyph" style="bottom:20%;left:11%;--rot:4deg;--sz:1.1rem;--op:0.05;--fd:10s;--fi:4">ATR</span>
+            <span class="bg-glyph glyph-geo" style="bottom:16%;right:10%;--rot:-7deg;--sz:1.3rem;--op:0.08;--fd:9s;--fi:5">⬢</span>
         </div>
         <div class="container">
-            <div class="section-header reveal-up">
-                <div class="section-tag">What is Zenith?</div>
-                <h2 class="section-title">Automate your trading<br>with institutional-grade<br><span class="title-gradient">Smart Money logic</span></h2>
-                <p class="section-desc">Zenith uses ICT/SMC concepts — Break of Structure, Order Blocks, Fair Value Gaps, and liquidity sweeps — to find high-probability entries across Forex, Metals, Crypto, and Indices.</p>
-            </div>
-            <div class="features-bento">
-                <div class="bento-item bento-lg glass-card reveal-up" data-tilt>
-                    <div class="feature-card-glow"></div>
-                    <div class="bento-content">
-                        <div class="feature-icon-wrap"><div class="feature-icon"><i class="fas fa-chart-line"></i></div></div>
-                        <h3>Adaptive Signal Engine</h3>
-                        <p>Multi-factor signal stack with trend, momentum, and volatility filters that can be tuned per market.</p>
-                        <div class="feature-tags"><span class="ftag">Trend + Volatility</span><span class="ftag">Regime Filters</span><span class="ftag">Risk Controls</span></div>
-                    </div>
-                    <div class="bento-visual">
-                        <div class="mini-chart">
-                            <svg viewBox="0 0 200 80" preserveAspectRatio="none">
-                                <defs><linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#00ff87" stop-opacity="0.3"/><stop offset="100%" stop-color="#00ff87" stop-opacity="0"/></linearGradient></defs>
-                                <path d="M0,60 Q20,55 40,40 T80,35 T120,50 T160,20 T200,30" fill="none" stroke="#00ff87" stroke-width="2" class="svg-animate-line"/>
-                                <path d="M0,60 Q20,55 40,40 T80,35 T120,50 T160,20 T200,30 V80 H0 Z" fill="url(#chartFill)" class="svg-animate-fill"/>
-                            </svg>
-                        </div>
-                    </div>
+            <div class="prop-why-shell">
+                <div class="section-header reveal-up">
+                    <div class="section-tag">Trading Bot</div>
+                    <h2 class="section-title">Why traders run our<br><span class="title-gradient">automated bot</span></h2>
+                    <p class="section-desc">Built for disciplined execution, transparent risk controls, and repeatable live + backtest workflow.</p>
                 </div>
-                <div class="bento-item glass-card reveal-up" data-delay="100" data-tilt><div class="feature-card-glow"></div><div class="feature-icon-wrap"><div class="feature-icon"><i class="fas fa-forward"></i></div></div><h3>Walk-Forward</h3><p>Rolling windows validate robustness across changing market regimes.</p><div class="feature-tags"><span class="ftag">Rolling OOS</span><span class="ftag">Anti-Overfit</span></div></div>
-                <div class="bento-item glass-card reveal-up" data-delay="200" data-tilt><div class="feature-card-glow"></div><div class="feature-icon-wrap"><div class="feature-icon"><i class="fas fa-dice"></i></div></div><h3>Monte Carlo</h3><p>Randomized reordering and stress testing to gauge stability.</p><div class="feature-tags"><span class="ftag">Stress Tests</span><span class="ftag">Confidence</span></div></div>
-                <div class="bento-item glass-card reveal-up" data-delay="300" data-tilt><div class="feature-card-glow"></div><div class="feature-icon-wrap"><div class="feature-icon"><i class="fas fa-layer-group"></i></div></div><h3>Multi-Asset Suite</h3><p>Designed for FX, metals, crypto, and index markets.</p><div class="feature-tags"><span class="ftag">Forex</span><span class="ftag">Metals</span><span class="ftag">Crypto</span><span class="ftag">Indices</span></div></div>
-                <div class="bento-item glass-card reveal-up" data-delay="400" data-tilt><div class="feature-card-glow"></div><div class="feature-icon-wrap"><div class="feature-icon"><i class="fas fa-shield-halved"></i></div></div><h3>Risk Management</h3><p>Adaptive risk controls, dynamic stops, and drawdown protection.</p><div class="feature-tags"><span class="ftag">Dynamic Stops</span><span class="ftag">Risk Caps</span><span class="ftag">DD Protection</span></div></div>
-                <div class="bento-item glass-card reveal-up" data-delay="500" data-tilt><div class="feature-card-glow"></div><div class="feature-icon-wrap"><div class="feature-icon"><i class="fas fa-plug"></i></div></div><h3>MT5 Integration</h3><p>Connect MetaTrader 5 for real-time data feeds and live execution.</p><div class="feature-tags"><span class="ftag">MetaTrader 5</span><span class="ftag">Live Data</span></div></div>
+                <div class="prop-why-grid">
+                    <article class="prop-card glass-card reveal-up" data-delay="50">
+                        <div class="prop-card-glow feature-card-glow"></div>
+                        <div class="prop-card-icon"><i class="fas fa-shield-halved"></i></div>
+                        <h3>Strict risk guardrails</h3>
+                        <p>Daily drawdown and margin-usage limits are enforced automatically to protect account health while trading live.</p>
+                    </article>
+                    <article class="prop-card glass-card reveal-up" data-delay="120">
+                        <div class="prop-card-glow feature-card-glow"></div>
+                        <div class="prop-card-icon"><i class="fas fa-chart-line"></i></div>
+                        <h3>Backtest-to-live parity</h3>
+                        <p>The same strategy logic and instrument settings power both historical simulations and real MT5 execution.</p>
+                    </article>
+                    <article class="prop-card glass-card reveal-up" data-delay="180">
+                        <div class="prop-card-glow feature-card-glow"></div>
+                        <div class="prop-card-icon"><i class="fas fa-robot"></i></div>
+                        <h3>AI-assisted filtering</h3>
+                        <p>Signal validation layers reduce weak setups and prioritize higher-quality entries across supported symbols.</p>
+                    </article>
+                    <article class="prop-card glass-card reveal-up" data-delay="240">
+                        <div class="prop-card-glow feature-card-glow"></div>
+                        <div class="prop-card-icon"><i class="fas fa-gauge-high"></i></div>
+                        <h3>Unified control dashboard</h3>
+                        <p>Configure runtime risk, monitor telemetry, run backtests, and review performance from one responsive interface.</p>
+                    </article>
+                </div>
             </div>
         </div>
     </section>
 
     <!-- stats -->
-    <section class="stats-section">
-        <div class="stats-grid-bg"></div>
+    <section class="stats-section planet-hero-section">
+        <canvas id="planetParticleCanvas" class="planet-particle-canvas" aria-hidden="true"></canvas>
+        <div class="stats-space-stars" aria-hidden="true">
+            <span class="star s1"></span><span class="star s2"></span><span class="star s3"></span><span class="star s4"></span><span class="star s5"></span><span class="star s6"></span><span class="star s7"></span><span class="star s8"></span><span class="star s9"></span><span class="star s10"></span><span class="star s11"></span><span class="star s12"></span>
+        </div>
         <div class="bg-glyphs section-glyphs">
-            <span class="bg-glyph" style="top:15%;left:6%;--rot:-3deg;--sz:1.5rem;--blur:0px;--op:0.05;--fd:10s;--fi:0">$</span>
-            <span class="bg-glyph" style="top:35%;left:12%;--rot:5deg;--sz:1.1rem;--blur:1px;--op:0.04;--fd:9s;--fi:1">+7,131%</span>
-            <span class="bg-glyph" style="top:60%;left:8%;--rot:-2deg;--sz:1.7rem;--blur:0px;--op:0.05;--fd:11s;--fi:2">$$$</span>
-            <span class="bg-glyph" style="top:80%;left:16%;--rot:3deg;--sz:1rem;--blur:0px;--op:0.04;--fd:8s;--fi:3">44.8%</span>
-            <span class="bg-glyph" style="top:20%;right:8%;--rot:4deg;--sz:1.2rem;--blur:0px;--op:0.05;--fd:10s;--fi:4">€</span>
-            <span class="bg-glyph" style="top:45%;right:6%;--rot:-5deg;--sz:1rem;--blur:0px;--op:0.04;--fd:12s;--fi:5">PF 1.87</span>
-            <span class="bg-glyph" style="top:70%;right:14%;--rot:2deg;--sz:1.4rem;--blur:1px;--op:0.05;--fd:9s;--fi:6">¥</span>
-            <span class="bg-glyph" style="top:88%;right:20%;--rot:-4deg;--sz:1.1rem;--blur:0px;--op:0.04;--fd:11s;--fi:7">1,277</span>
-            <span class="bg-glyph" style="top:10%;left:52%;--rot:1deg;--sz:1.3rem;--blur:0px;--op:0.04;--fd:8s;--fi:8">↑</span>
-            <span class="bg-glyph" style="top:85%;left:44%;--rot:-1deg;--sz:1.5rem;--blur:0px;--op:0.04;--fd:10s;--fi:9">£</span>
+            <span class="bg-glyph glyph-geo" style="top:16%;left:16%;--rot:-6deg;--sz:1.4rem;--op:0.08;--fd:9s;--fi:0">△</span>
+            <span class="bg-glyph glyph-geo" style="top:22%;left:76%;--rot:8deg;--sz:1.2rem;--op:0.07;--fd:10s;--fi:1">◇</span>
+            <span class="bg-glyph glyph-geo" style="top:38%;left:22%;--rot:-9deg;--sz:1.1rem;--op:0.06;--fd:11s;--fi:2">◯</span>
+            <span class="bg-glyph glyph-geo" style="top:43%;left:72%;--rot:7deg;--sz:1.3rem;--op:0.07;--fd:9s;--fi:3">✦</span>
+            <span class="bg-glyph glyph-geo" style="top:54%;left:14%;--rot:-5deg;--sz:1.25rem;--op:0.06;--fd:8s;--fi:4">⬟</span>
+            <span class="bg-glyph glyph-geo" style="top:56%;left:80%;--rot:6deg;--sz:1.15rem;--op:0.06;--fd:12s;--fi:5">⬢</span>
         </div>
         <div class="container">
-            <div class="section-header reveal-up">
+            <div class="planet-hero-content section-header reveal-up">
                 <h2 class="section-title stats-title">Verified performance<br><span class="title-gradient">across 7 markets</span><br>with walk-forward validation</h2>
                 <p class="section-desc">Every signal is backtested on real MT5 data with split-sample and walk-forward analysis to ensure robustness — not curve-fitting.</p>
             </div>
-            <div class="stats-row">
-                <div class="stat-big reveal-up" data-delay="100">
-                    <div class="stat-big-value">7</div>
-                    <div class="stat-big-label">Markets Traded</div>
-                </div>
-                <div class="stat-big-divider"></div>
-                <div class="stat-big reveal-up" data-delay="200">
-                    <div class="stat-big-value">ICT/SMC</div>
-                    <div class="stat-big-label">Strategy Engine</div>
-                </div>
-                <div class="stat-big-divider"></div>
-                <div class="stat-big reveal-up" data-delay="300">
-                    <div class="stat-big-value">M15</div>
-                    <div class="stat-big-label">Timeframe</div>
-                </div>
-            </div>
         </div>
-        <!-- glow -->
-        <div class="horizon-glow"></div>
+        <div class="planet-horizon-wrap" aria-hidden="true">
+            <div class="planet-atmo"></div>
+            <div class="planet-horizon"></div>
+            <div class="planet-fade"></div>
+        </div>
     </section>
 
     <!-- strategy -->
@@ -298,36 +284,6 @@
                     <div class="timeline-dot"><span>4</span></div>
                     <div class="timeline-card glass-card"><h3>Risk Management</h3><p>ATR-based stop loss, 2R take profit, break-even at 1R (SL → entry), trailing at 50% target (SL → 25% profit), and 2% risk per trade.</p><div class="timeline-values"><div class="tv"><span class="tv-label">SL</span><span class="tv-value">ATR × 1.0</span></div><div class="tv"><span class="tv-label">TP</span><span class="tv-value">2R</span></div><div class="tv"><span class="tv-label">BE</span><span class="tv-value">1R</span></div></div></div>
                 </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- cascade -->
-    <section class="cascade-section">
-        <div class="bg-glyphs section-glyphs">
-            <span class="bg-glyph" style="top:20%;left:8%;--rot:-3deg;--sz:1.4rem;--blur:0px;--op:0.04;--fd:10s;--fi:0">$</span>
-            <span class="bg-glyph" style="top:50%;left:5%;--rot:4deg;--sz:1.1rem;--blur:1px;--op:0.04;--fd:9s;--fi:1">algo</span>
-            <span class="bg-glyph" style="top:75%;left:12%;--rot:-5deg;--sz:1.2rem;--blur:0px;--op:0.04;--fd:11s;--fi:2">auto</span>
-            <span class="bg-glyph" style="top:25%;right:7%;--rot:3deg;--sz:1.5rem;--blur:0px;--op:0.04;--fd:8s;--fi:3">$$</span>
-            <span class="bg-glyph" style="top:60%;right:10%;--rot:-2deg;--sz:1rem;--blur:0px;--op:0.04;--fd:12s;--fi:4">&gt;&gt;</span>
-            <span class="bg-glyph" style="top:80%;right:18%;--rot:5deg;--sz:1.15rem;--blur:1px;--op:0.04;--fd:10s;--fi:5">execute</span>
-        </div>
-        <div class="cascade-left reveal-up">
-            <p class="cascade-subtitle">Stop guessing with your trades,<br>let the algorithm do the work.</p>
-            <div class="cascade-buttons">
-                <a href="dashboard.html" class="btn-glow"><span class="btn-glow-text">Open Dashboard</span><span class="btn-glow-icon"><i class="fas fa-arrow-right"></i></span></a>
-                <a href="docs.html" class="btn-outline-hero">Documentation</a>
-            </div>
-        </div>
-        <div class="cascade-right">
-            <div class="cascade-words">
-                <span class="cascade-word">Start trading</span>
-                <span class="cascade-word">Start trading</span>
-                <span class="cascade-word">Start trading</span>
-                <span class="cascade-word">Start trading</span>
-                <span class="cascade-word">Start trading</span>
-                <span class="cascade-word">Start trading</span>
-                <span class="cascade-word">Start trading</span>
             </div>
         </div>
     </section>
@@ -435,20 +391,26 @@
 
     <!-- cta -->
     <section class="cta-section">
-        <div class="bg-glyphs section-glyphs">
-            <span class="bg-glyph" style="top:15%;left:10%;--rot:-4deg;--sz:1.5rem;--blur:0px;--op:0.05;--fd:9s;--fi:0">→</span>
-            <span class="bg-glyph" style="top:50%;left:6%;--rot:3deg;--sz:1.6rem;--blur:1px;--op:0.04;--fd:11s;--fi:1">$</span>
-            <span class="bg-glyph" style="top:80%;left:15%;--rot:-2deg;--sz:1.1rem;--blur:0px;--op:0.05;--fd:8s;--fi:2">launch</span>
-            <span class="bg-glyph" style="top:20%;right:8%;--rot:5deg;--sz:1.3rem;--blur:0px;--op:0.05;--fd:10s;--fi:3">&gt;&gt;&gt;</span>
-            <span class="bg-glyph" style="top:55%;right:10%;--rot:-3deg;--sz:1.4rem;--blur:0px;--op:0.04;--fd:12s;--fi:4">$$</span>
-            <span class="bg-glyph" style="top:82%;right:16%;--rot:2deg;--sz:1rem;--blur:0px;--op:0.04;--fd:9s;--fi:5">go live</span>
-        </div>
-        <div class="cta-bg-orbs"><div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div></div>
-        <div class="container">
-            <div class="cta-content reveal-up">
-                <h2>Ready to see it in action?</h2>
-                <p>Launch the dashboard, run backtests, and explore the data yourself.</p>
-                <a href="dashboard.html" class="btn-glow btn-glow-lg"><span class="btn-glow-text">Launch Dashboard</span><span class="btn-glow-icon"><i class="fas fa-rocket"></i></span></a>
+        <div class="container cta-inner">
+            <!-- LEFT: content -->
+            <div class="cta-left reveal-up">
+                <span class="cta-eyebrow">ICT / Smart Money Concepts</span>
+                <h2>Stop guessing<br>with your trades —<br><em>let the algo work.</em></h2>
+                <div class="cta-btns">
+                    <a href="dashboard.html" class="btn-glow"><span class="btn-glow-text">Launch Dashboard</span><span class="btn-glow-icon"><i class="fas fa-rocket"></i></span></a>
+                    <a href="docs.html" class="btn-outline-hero">Documentation</a>
+                </div>
+            </div>
+            <!-- RIGHT: giant text wall -->
+            <div class="cta-right" aria-hidden="true">
+                <span class="cta-stack-row" style="--r-op:0.95">Start trading</span>
+                <span class="cta-stack-row" style="--r-op:0.70">Start trading</span>
+                <span class="cta-stack-row" style="--r-op:0.90">Start trading</span>
+                <span class="cta-stack-row" style="--r-op:0.58">Start trading</span>
+                <span class="cta-stack-row" style="--r-op:0.84">Start trading</span>
+                <span class="cta-stack-row" style="--r-op:0.50">Start trading</span>
+                <span class="cta-stack-row" style="--r-op:0.76">Start trading</span>
+                <span class="cta-stack-row" style="--r-op:0.42">Start trading</span>
             </div>
         </div>
     </section>
@@ -477,3 +439,6 @@
     <script src="js/main.js?v=20260225-01"></script>
 </body>
 </html>
+
+
+

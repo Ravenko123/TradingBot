@@ -59,6 +59,7 @@ function checkAuthAndUpdateNav() {
 
 document.addEventListener('DOMContentLoaded', () => {
     checkAuthAndUpdateNav();
+    initPageTransitions();
     initSiteReactiveGrid();
     initGridPulseWaves();
     initHeroGlyphInteraction();
@@ -263,13 +264,16 @@ function initSiteReactiveGrid() {
     if (!grids.length) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const hero = document.querySelector('.hero');
+    const isDashboard = document.body.classList.contains('dashboard-body');
+    const idleHover = isDashboard ? 0.72 : 0.58;
+    const activeHover = isDashboard ? 1.46 : 1.12;
 
     let targetX = window.innerWidth * 0.5;
     let targetY = window.innerHeight * 0.5;
     let currentX = targetX;
     let currentY = targetY;
-    let hoverTarget = 0.58;
-    let hoverCurrent = 0.58;
+    let hoverTarget = idleHover;
+    let hoverCurrent = idleHover;
     let rafId = null;
 
     const render = () => {
@@ -304,7 +308,7 @@ function initSiteReactiveGrid() {
 
         const heroBottom = hero ? hero.getBoundingClientRect().bottom : 0;
         const inTopHero = event.clientY <= heroBottom;
-        hoverTarget = inTopHero ? 0.58 : 1.12;
+        hoverTarget = inTopHero ? idleHover : activeHover;
 
         if (inTopHero) {
             targetX = window.innerWidth * 0.5;
@@ -314,7 +318,7 @@ function initSiteReactiveGrid() {
     }, { passive: true });
 
     window.addEventListener('mouseleave', () => {
-        hoverTarget = 0.58;
+        hoverTarget = idleHover;
         targetX = window.innerWidth * 0.5;
         targetY = window.innerHeight * 0.5;
         schedule();
@@ -564,100 +568,131 @@ function initGridPulseWaves() {
 // background — full-page falling stars (not viewport-locked)
 function initParticles() {
     if (perfModeEnabled) return;
-    const canvas = document.getElementById('particleCanvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const fullCanvas = document.getElementById('particleCanvas');
+    const planetCanvas = document.getElementById('planetParticleCanvas');
+    const fields = [];
 
-    let w, h;
-    const stars = [];
-    const STAR_COUNT = 19;
-
-    function measure() {
-        w = window.innerWidth;
-        h = window.innerHeight;
-        canvas.width = w;
-        canvas.height = h;
-        canvas.style.width = `${w}px`;
-        canvas.style.height = `${h}px`;
+    if (fullCanvas) {
+        fields.push({
+            canvas: fullCanvas,
+            ctx: fullCanvas.getContext('2d'),
+            stars: [],
+            count: 19,
+            speed: 1,
+            alphaBoost: 1
+        });
     }
-    measure();
+
+    if (planetCanvas) {
+        fields.push({
+            canvas: planetCanvas,
+            ctx: planetCanvas.getContext('2d'),
+            stars: [],
+            count: 16,
+            speed: 0.92,
+            alphaBoost: 1.1
+        });
+    }
+
+    if (!fields.length) return;
+
+    const measureField = (field) => {
+        const { canvas } = field;
+        if (canvas.id === 'particleCanvas') {
+            field.w = window.innerWidth;
+            field.h = window.innerHeight;
+            canvas.style.width = `${field.w}px`;
+            canvas.style.height = `${field.h}px`;
+        } else {
+            field.w = Math.max(1, Math.floor(canvas.clientWidth));
+            field.h = Math.max(1, Math.floor(canvas.clientHeight));
+        }
+
+        canvas.width = field.w;
+        canvas.height = field.h;
+    };
+
+    fields.forEach(measureField);
 
     let measureRaf = 0;
     const scheduleMeasure = () => {
         if (measureRaf) return;
         measureRaf = requestAnimationFrame(() => {
             measureRaf = 0;
-            measure();
+            fields.forEach(measureField);
         });
     };
     window.addEventListener('resize', scheduleMeasure);
 
-    const seedStars = () => {
-        stars.length = 0;
-        for (let i = 0; i < STAR_COUNT; i++) {
-            stars.push({
-                x: Math.random() * w,
-                y: Math.random() * h,
+    const seedStars = (field) => {
+        field.stars.length = 0;
+        for (let i = 0; i < field.count; i++) {
+            field.stars.push({
+                x: Math.random() * field.w,
+                y: Math.random() * field.h,
                 len: Math.random() * 24 + 14,
                 r: Math.random() * 2.1 + 1.4,
                 alpha: Math.random() * 0.42 + 0.34,
                 twinkle: Math.random() * 0.6 + 0.5,
                 phase: Math.random() * Math.PI * 2,
                 green: Math.random() < 0.2,
-                vy: Math.random() * 1.1 + 0.45,
-                vx: -(Math.random() * 1.0 + 0.35)
+                vy: (Math.random() * 1.1 + 0.45) * field.speed,
+                vx: -(Math.random() * 1.0 + 0.35) * field.speed
             });
         }
     };
 
-    seedStars();
+    fields.forEach(seedStars);
 
     let lastFrame = 0;
     function animate(time) {
         if (perfModeEnabled) return;
         if (time - lastFrame < 36) { requestAnimationFrame(animate); return; }
         lastFrame = time;
-        ctx.clearRect(0, 0, w, h);
+        fields.forEach((field) => {
+            const { ctx, stars, w, h, alphaBoost } = field;
+            ctx.clearRect(0, 0, w, h);
 
-        stars.forEach((star) => {
-            const pulse = 0.7 + 0.3 * Math.sin(time * 0.0012 * star.twinkle + star.phase);
-            const a = star.alpha * pulse;
-            const c = star.green ? '0,255,135' : '255,255,255';
+            stars.forEach((star) => {
+                const pulse = 0.7 + 0.3 * Math.sin(time * 0.0012 * star.twinkle + star.phase);
+                const a = star.alpha * pulse * alphaBoost;
+                const c = star.green ? '0,255,135' : '255,255,255';
 
-            star.y += star.vy;
-            star.x += star.vx;
+                star.y += star.vy;
+                star.x += star.vx;
 
-            if (star.y > h + 24 || star.x < -40) {
-                if (Math.random() < 0.62) {
-                    star.x = w + Math.random() * 40;
-                    star.y = Math.random() * h * 0.42;
-                } else {
-                    star.x = Math.random() * w;
-                    star.y = -40;
+                if (star.y > h + 24 || star.x < -40) {
+                    if (Math.random() < 0.62) {
+                        star.x = w + Math.random() * 40;
+                        star.y = Math.random() * h * 0.42;
+                    } else {
+                        star.x = Math.random() * w;
+                        star.y = -40;
+                    }
                 }
-            }
 
-            const tailX = star.x - star.vx * star.len;
-            const tailY = star.y - star.vy * star.len;
+                const tailX = star.x - star.vx * star.len;
+                const tailY = star.y - star.vy * star.len;
 
-            const grad = ctx.createLinearGradient(star.x, star.y, tailX, tailY);
-            grad.addColorStop(0, `rgba(${c},${Math.min(1, a * 1.15).toFixed(3)})`);
-            grad.addColorStop(1, `rgba(${c},0)`);
+                const grad = ctx.createLinearGradient(star.x, star.y, tailX, tailY);
+                grad.addColorStop(0, `rgba(${c},${Math.min(1, a * 1.15).toFixed(3)})`);
+                grad.addColorStop(1, `rgba(${c},0)`);
 
-            ctx.beginPath();
-            ctx.moveTo(star.x, star.y);
-            ctx.lineTo(tailX, tailY);
-            ctx.strokeStyle = grad;
-            ctx.lineWidth = star.green ? 2.2 : 1.6;
-            ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(star.x, star.y);
+                ctx.lineTo(tailX, tailY);
+                ctx.strokeStyle = grad;
+                ctx.lineWidth = star.green ? 2.2 : 1.6;
+                ctx.stroke();
 
-            ctx.beginPath();
-            ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(${c},${Math.min(1, a * 1.35).toFixed(3)})`;
-            ctx.shadowBlur = star.green ? 28 : 22;
-            ctx.shadowColor = `rgba(${c},${Math.min(1, a * 1.1).toFixed(3)})`;
-            ctx.fill();
-            ctx.shadowBlur = 0;
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(${c},${Math.min(1, a * 1.35).toFixed(3)})`;
+                ctx.shadowBlur = star.green ? 28 : 22;
+                ctx.shadowColor = `rgba(${c},${Math.min(1, a * 1.1).toFixed(3)})`;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            });
         });
 
         requestAnimationFrame(animate);
@@ -772,7 +807,7 @@ function initTiltCards() {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     if (window.innerWidth < 992) return;
 
-    const cards = document.querySelectorAll('[data-tilt], .pricing-section .pricing-card, .performance-section .perf-card, .strategy-section .timeline-card');
+    const cards = document.querySelectorAll('[data-tilt], .pricing-section .pricing-card, .performance-section .perf-card, .strategy-section .timeline-card, .prop-why-section .prop-card');
     cards.forEach(card => {
         card.addEventListener('mousemove', (e) => {
             const rect = card.getBoundingClientRect();
@@ -821,4 +856,26 @@ function initMobileToggle() {
     });
 }
 
+function initPageTransitions() {
+    const overlay = document.getElementById('pageTransition');
+    if (!overlay) return;
+    // Fade overlay out once page loads (handles forward nav)
+    overlay.classList.remove('going-out');
 
+    document.querySelectorAll('a[href]').forEach(link => {
+        const href = link.getAttribute('href');
+        if (!href) return;
+        // Skip: pure anchors, external links, mailto, js
+        if (href.startsWith('#') || href.startsWith('http') || href.startsWith('//') ||
+            href.startsWith('mailto:') || href.startsWith('javascript')) return;
+        // Skip hash-only navigation on same page anchors within index
+        if (href.includes('#') && !href.includes('.html')) return;
+
+        link.addEventListener('click', e => {
+            e.preventDefault();
+            const dest = href;
+            overlay.classList.add('going-out');
+            setTimeout(() => { window.location.href = dest; }, 420);
+        });
+    });
+}

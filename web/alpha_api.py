@@ -41,14 +41,20 @@ BOT_VENV_PYTHON = BASE_DIR / ".venv" / "Scripts" / "python.exe"
 BOT_RUNTIME_CONFIG_FILE = BASE_DIR / "mt5_bot" / "runtime_config.json"
 TELEGRAM_CONFIG_FILE = BASE_DIR / "mt5_bot" / "telegram_config.json"
 BOT_LEARNED_PARAMS_FILE = BASE_DIR / "mt5_bot" / "liverun" / "learned_params.json"
+MT5_INSTALL_URL = "https://www.metatrader5.com/en/download"
 BACKTEST_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 DB_DIR.mkdir(parents=True, exist_ok=True)
 SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "GBPJPY", "BTCUSD", "NAS100"]
+MIN_BOT_RISK_PERCENT = 0.10
+MAX_BOT_RISK_PERCENT = 2.00
 
 app = Flask(__name__, static_folder=str(WEB_DIR), static_url_path="")
 CORS(app)
 BOT_PROCESS = None
 BOT_LOG_HANDLE = None
+TELEGRAM_REMOTE_THREAD = None
+TELEGRAM_REMOTE_STOP = threading.Event()
+TELEGRAM_LAST_UPDATE_ID = None
 
 
 # db setup
@@ -220,6 +226,9 @@ def read_bot_config():
     default_cfg = {
         "risk_percent": 1.0,
         "enabled_symbols": SYMBOLS.copy(),
+        "max_daily_drawdown_pct": 5.0,
+        "max_margin_usage_pct": 20.0,
+        "daily_drawdown_adjustment_usd": 0.0,
     }
     if BOT_RUNTIME_CONFIG_FILE.exists():
         try:
@@ -230,13 +239,19 @@ def read_bot_config():
             pass
 
     risk = float(default_cfg.get("risk_percent", 1.0))
-    risk = max(0.01, min(100.0, risk))
+    risk = max(MIN_BOT_RISK_PERCENT, min(MAX_BOT_RISK_PERCENT, risk))
+    max_daily_dd = max(0.5, min(25.0, float(default_cfg.get("max_daily_drawdown_pct", 5.0))))
+    max_margin = max(5.0, min(95.0, float(default_cfg.get("max_margin_usage_pct", 20.0))))
+    dd_adjust = float(default_cfg.get("daily_drawdown_adjustment_usd", 0.0))
     enabled = [s for s in default_cfg.get("enabled_symbols", []) if s in SYMBOLS]
     if not enabled:
         enabled = SYMBOLS.copy()
 
     return {
         "risk_percent": round(risk, 2),
+        "max_daily_drawdown_pct": round(max_daily_dd, 2),
+        "max_margin_usage_pct": round(max_margin, 2),
+        "daily_drawdown_adjustment_usd": round(dd_adjust, 2),
         "enabled_symbols": sorted(enabled),
         "available_symbols": SYMBOLS.copy(),
     }
@@ -269,6 +284,239 @@ def write_telegram_config(cfg: dict):
         "bot_token": str(cfg.get("bot_token", "") or "").strip(),
         "chat_id": str(cfg.get("chat_id", "") or "").strip(),
     }, indent=2))
+
+
+def notify_telegram(message: str) -> bool:
+    """Send a notification to Telegram using the saved bot config."""
+    try:
+        import requests as _req
+        cfg = read_telegram_config()
+        token = cfg.get("bot_token", "").strip()
+        chat_id = cfg.get("chat_id", "").strip()
+        if not token or not chat_id or token == "YOUR_BOT_TOKEN_HERE":
+            return False
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        resp = _req.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": f"🤖 Zenith Bot\n{ts}\n\n{message}"},
+            timeout=8
+        )
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def send_telegram_message(message: str) -> bool:
+    try:
+        import requests as _req
+        cfg = read_telegram_config()
+        token = cfg.get("bot_token", "").strip()
+        chat_id = cfg.get("chat_id", "").strip()
+        if not token or not chat_id or token == "YOUR_BOT_TOKEN_HERE":
+            return False
+        resp = _req.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": message},
+            timeout=8
+        )
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def _start_bot_engine(trigger: str = "api"):
+    global BOT_PROCESS, BOT_LOG_HANDLE
+    strategy = "ict_smc"
+
+    if BOT_PROCESS is not None and BOT_PROCESS.poll() is None:
+        return {"success": True, "message": "Bot already running", "pid": BOT_PROCESS.pid}, 200
+
+    bot_script = BASE_DIR / "mt5_bot" / "main.py"
+    python_exe = resolve_bot_python()
+
+    try:
+        BOT_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        if BOT_LOG_HANDLE and not BOT_LOG_HANDLE.closed:
+            BOT_LOG_HANDLE.close()
+        BOT_LOG_HANDLE = open(BOT_LOG_FILE, "a", encoding="utf-8", buffering=1)
+        BOT_LOG_HANDLE.write(f"\n\n===== BOT START {datetime.now(timezone.utc).isoformat()} ({trigger}) =====\n")
+
+        BOT_PROCESS = subprocess.Popen(
+            [python_exe, str(bot_script)],
+            cwd=str(BASE_DIR),
+            stdout=BOT_LOG_HANDLE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL
+        )
+    except Exception as e:
+        return {"success": False, "message": f"Failed to start bot: {str(e)}"}, 500
+
+    _time.sleep(1.2)
+    if BOT_PROCESS.poll() is not None:
+        state = load_telegram_state()
+        state["is_running"] = False
+        save_telegram_state(state)
+        last_logs = tail_bot_log(30)
+        lower_logs = last_logs.lower()
+        mt5_missing = (
+            "mt5 init failed" in lower_logs
+            or "cannot start without mt5 connection" in lower_logs
+            or "no module named 'metatrader5'" in lower_logs
+            or "no module named \"metatrader5\"" in lower_logs
+        )
+
+        payload = {
+            "success": False,
+            "message": "Bot failed to start. See bot logs.",
+            "logs": last_logs
+        }
+        if mt5_missing:
+            payload.update({
+                "error_code": "MT5_NOT_AVAILABLE",
+                "help_title": "MetaTrader 5 not available",
+                "help_message": "Install MT5 Desktop, open it once, log in to your broker account, then start the bot again.",
+                "help_url": MT5_INSTALL_URL,
+            })
+        return {
+            **payload
+        }, 500
+
+    state = load_telegram_state()
+    state["is_running"] = True
+    state["strategy"] = strategy
+    save_telegram_state(state)
+
+    notify_telegram("🟢 <b>Bot Started</b>\nStrategy: ICT/SMC\nMonitoring: EURUSD, GBPUSD, GBPJPY, USDJPY, XAUUSD, NAS100, BTCUSD")
+    return {"success": True, "message": "Bot started", "pid": BOT_PROCESS.pid}, 200
+
+
+def _stop_bot_engine(trigger: str = "api"):
+    global BOT_PROCESS, BOT_LOG_HANDLE
+
+    if BOT_PROCESS is not None and BOT_PROCESS.poll() is None:
+        try:
+            BOT_PROCESS.terminate()
+            BOT_PROCESS.wait(timeout=5)
+        except Exception:
+            try:
+                BOT_PROCESS.kill()
+            except Exception:
+                pass
+
+    if BOT_LOG_HANDLE and not BOT_LOG_HANDLE.closed:
+        try:
+            BOT_LOG_HANDLE.write(f"===== BOT STOP {datetime.now(timezone.utc).isoformat()} ({trigger}) =====\n")
+            BOT_LOG_HANDLE.close()
+        except Exception:
+            pass
+
+    state = load_telegram_state()
+    state["is_running"] = False
+    save_telegram_state(state)
+
+    notify_telegram("🔴 <b>Bot Stopped</b>\nAll monitoring halted. Use the dashboard to restart.")
+    return {"success": True, "message": "Bot stopped"}, 200
+
+
+def _telegram_runtime_status_text() -> str:
+    state = load_telegram_state()
+    runtime = load_bot_runtime_state()
+    process_alive = BOT_PROCESS is not None and BOT_PROCESS.poll() is None
+    running = state.get("is_running", False)
+
+    status = "running ✅" if (running and process_alive) else "stopped ⛔"
+    return (
+        f"Zenith status: {status}\n"
+        f"Process alive: {process_alive}\n"
+        f"Open positions: {runtime.get('open_positions', 0)}\n"
+        f"Signals detected: {runtime.get('signals_detected', 0)}\n"
+        f"Positions opened: {runtime.get('positions_opened', 0)}\n"
+        f"Failed orders: {runtime.get('failed_orders', 0)}"
+    )
+
+
+def _handle_telegram_command(text: str) -> bool:
+    cmd = (text or "").strip().lower()
+    if not cmd.startswith("/"):
+        return False
+
+    if cmd.startswith("/startbot"):
+        payload, code = _start_bot_engine(trigger="telegram")
+        if payload.get("success"):
+            send_telegram_message("✅ Bot started from phone command.")
+        else:
+            send_telegram_message(f"❌ Start failed: {payload.get('message', 'unknown error')}")
+        return code < 500
+
+    if cmd.startswith("/stopbot"):
+        payload, code = _stop_bot_engine(trigger="telegram")
+        if payload.get("success"):
+            send_telegram_message("🛑 Bot stopped from phone command.")
+        else:
+            send_telegram_message(f"❌ Stop failed: {payload.get('message', 'unknown error')}")
+        return code < 500
+
+    if cmd.startswith("/status"):
+        send_telegram_message(_telegram_runtime_status_text())
+        return True
+
+    if cmd.startswith("/help"):
+        send_telegram_message("Phone commands:\n/startbot\n/stopbot\n/status\n/help")
+        return True
+
+    return False
+
+
+def poll_telegram_remote_commands_once():
+    global TELEGRAM_LAST_UPDATE_ID
+    cfg = read_telegram_config()
+    token = cfg.get("bot_token", "").strip()
+    allowed_chat_id = cfg.get("chat_id", "").strip()
+    if not token or not allowed_chat_id or token == "YOUR_BOT_TOKEN_HERE":
+        return
+
+    try:
+        import requests as _req
+        params = {"timeout": 6}
+        if TELEGRAM_LAST_UPDATE_ID is not None:
+            params["offset"] = TELEGRAM_LAST_UPDATE_ID + 1
+        resp = _req.get(f"https://api.telegram.org/bot{token}/getUpdates", params=params, timeout=12)
+        if resp.status_code != 200:
+            return
+
+        data = resp.json() or {}
+        updates = data.get("result", []) if isinstance(data, dict) else []
+        for upd in updates:
+            try:
+                upd_id = int(upd.get("update_id"))
+                TELEGRAM_LAST_UPDATE_ID = max(TELEGRAM_LAST_UPDATE_ID or upd_id, upd_id)
+            except Exception:
+                pass
+
+            msg = upd.get("message") or upd.get("edited_message") or {}
+            chat_id = str((msg.get("chat") or {}).get("id", "")).strip()
+            text = str(msg.get("text", "") or "")
+            if not text or chat_id != allowed_chat_id:
+                continue
+            _handle_telegram_command(text)
+    except Exception:
+        return
+
+
+def telegram_remote_loop():
+    while not TELEGRAM_REMOTE_STOP.is_set():
+        poll_telegram_remote_commands_once()
+        TELEGRAM_REMOTE_STOP.wait(2.0)
+
+
+def ensure_telegram_remote_loop():
+    global TELEGRAM_REMOTE_THREAD
+    if TELEGRAM_REMOTE_THREAD and TELEGRAM_REMOTE_THREAD.is_alive():
+        return
+
+    TELEGRAM_REMOTE_STOP.clear()
+    TELEGRAM_REMOTE_THREAD = threading.Thread(target=telegram_remote_loop, name="telegram-remote-loop", daemon=True)
+    TELEGRAM_REMOTE_THREAD.start()
 
 
 def mask_token(token: str) -> str:
@@ -750,7 +998,7 @@ def generate_backtest_data(symbol, days, risk_pct=1.0):
         }
 
     try:
-        bars = max(1200, int(days) * 96)
+        bars = max(1800, int(days) * 320)
         df = fetch_data(symbol, bars=bars)
         if df is None or df.empty or len(df) < 120:
             return {
@@ -762,6 +1010,26 @@ def generate_backtest_data(symbol, days, risk_pct=1.0):
                 "meta": {
                     "mode": "improved_backtest_engine",
                     "message": "Not enough MT5 historical candles for selected symbol/days.",
+                },
+                "metrics": {},
+            }
+
+        if "Time" in df.columns:
+            df = df.sort_values("Time").reset_index(drop=True)
+            last_ts = pd.Timestamp(df["Time"].iloc[-1])
+            cutoff_ts = last_ts - timedelta(days=int(days))
+            df = df[df["Time"] >= cutoff_ts].reset_index(drop=True)
+
+        if df is None or df.empty or len(df) < 120:
+            return {
+                "candles": [],
+                "trades": [],
+                "equity_curve": [],
+                "symbol": symbol,
+                "days": days,
+                "meta": {
+                    "mode": "improved_backtest_engine",
+                    "message": "Not enough candles after applying requested day window.",
                 },
                 "metrics": {},
             }
@@ -820,6 +1088,20 @@ def generate_backtest_data(symbol, days, risk_pct=1.0):
                 "balance": round(balance, 2),
             })
 
+        interval_minutes = None
+        actual_days_covered = None
+        if len(df) >= 2 and "Time" in df.columns:
+            try:
+                time_diffs = pd.Series(df["Time"]).diff().dropna()
+                median_diff = time_diffs.median()
+                interval_minutes = int(max(1, median_diff.total_seconds() // 60))
+                actual_days_covered = round(
+                    (pd.Timestamp(df["Time"].iloc[-1]) - pd.Timestamp(df["Time"].iloc[0])).total_seconds() / 86400.0,
+                    2,
+                )
+            except Exception:
+                pass
+
         return {
             "candles": candles,
             "trades": trades,
@@ -830,7 +1112,11 @@ def generate_backtest_data(symbol, days, risk_pct=1.0):
             "meta": {
                 "mode": "backtest_improved_no_lookahead",
                 "lookahead_safe": True,
-                "message": "Using mt5_bot/backtest_improved.py in strict no-lookahead mode on real MT5 data.",
+                "risk_pct_requested": float(risk_pct),
+                "bars_loaded": int(len(df)),
+                "interval_minutes": interval_minutes,
+                "actual_days_covered": actual_days_covered,
+                "message": "Using mt5_bot/backtest_improved.py in strict no-lookahead mode on real MT5 data and requested calendar-day window.",
             },
         }
     finally:
@@ -868,38 +1154,14 @@ def _extract_metrics_from_payload(payload: dict) -> dict:
 @app.route("/api/backtest/save", methods=["POST"])
 @require_auth
 def backtest_save():
-    """Save a backtest run result."""
-    data = request.json or {}
-    symbol = data.get("symbol", "EURUSD")
-    result = data.get("metrics", {})
-    timestamp = data.get("timestamp", _utcnow().isoformat())
-    
-    run_id = secrets.token_hex(8)
-    
-    conn = get_db()
-    cur = conn.cursor()
-    try:
-        cur.execute(
-            """
-            INSERT INTO backtest_runs (id, user_id, symbol, mode, status, result_file, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                run_id,
-                request.user["id"],
-                symbol,
-                "standard",
-                "completed",
-                json.dumps(result),
-                timestamp
-            )
-        )
-        conn.commit()
-        conn.close()
-        return json_response({"success": True, "run_id": run_id})
-    except Exception as e:
-        conn.close()
-        return json_response({"success": False, "error": str(e)}, 500)
+    """Legacy endpoint disabled to prevent synthetic dashboard-only saves."""
+    return json_response(
+        {
+            "success": False,
+            "message": "Disabled. Use /api/backtest/run for real MT5 backtests via backtest_improved.py.",
+        },
+        410,
+    )
 
 
 @app.route("/api/backtest/simulate", methods=["POST"])
@@ -908,7 +1170,11 @@ def backtest_simulate():
     data = request.json or {}
     symbol = data.get("symbol", "EURUSD")
     days = min(365, max(7, int(data.get("days", 60))))
-    risk_pct = max(0.1, min(10.0, float(data.get("risk_pct", 1.0))))
+    try:
+        risk_pct = float(data.get("risk_pct", 1.0))
+    except Exception:
+        risk_pct = 1.0
+    risk_pct = max(0.1, min(10.0, risk_pct))
 
     result = generate_backtest_data(symbol, days, risk_pct=risk_pct)
     return json_response(result)
@@ -1017,7 +1283,7 @@ def backtest_runs():
         """
         SELECT id, symbol, mode, status, created_at, result_file
         FROM backtest_runs
-        WHERE user_id = ?
+        WHERE user_id = ? AND status != 'completed'
         ORDER BY created_at DESC
         """,
         (request.user["id"],)
@@ -1358,78 +1624,17 @@ def get_status():
 @app.route("/api/bot/start", methods=["POST"])
 @require_auth
 def start_bot():
-    global BOT_PROCESS, BOT_LOG_HANDLE
-    strategy = "ict_smc"
-
-    if BOT_PROCESS is not None and BOT_PROCESS.poll() is None:
-        return json_response({"success": True, "message": "Bot already running", "pid": BOT_PROCESS.pid})
-
-    bot_script = BASE_DIR / "mt5_bot" / "main.py"
-    python_exe = resolve_bot_python()
-
-    try:
-        BOT_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        if BOT_LOG_HANDLE and not BOT_LOG_HANDLE.closed:
-            BOT_LOG_HANDLE.close()
-        BOT_LOG_HANDLE = open(BOT_LOG_FILE, "a", encoding="utf-8", buffering=1)
-        BOT_LOG_HANDLE.write(f"\n\n===== BOT START {datetime.now(timezone.utc).isoformat()} =====\n")
-
-        BOT_PROCESS = subprocess.Popen(
-            [python_exe, str(bot_script)],
-            cwd=str(BASE_DIR),
-            stdout=BOT_LOG_HANDLE,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL
-        )
-    except Exception as e:
-        return json_response({"success": False, "message": f"Failed to start bot: {str(e)}"}, 500)
-
-    _time.sleep(1.2)
-    if BOT_PROCESS.poll() is not None:
-        state = load_telegram_state()
-        state["is_running"] = False
-        save_telegram_state(state)
-        last_logs = tail_bot_log(30)
-        return json_response({
-            "success": False,
-            "message": "Bot failed to start. See bot logs.",
-            "logs": last_logs
-        }, 500)
-
-    state = load_telegram_state()
-    state["is_running"] = True
-    state["strategy"] = strategy
-    save_telegram_state(state)
-
-    return json_response({"success": True, "message": "Bot started", "pid": BOT_PROCESS.pid})
+    ensure_telegram_remote_loop()
+    payload, status = _start_bot_engine(trigger="api")
+    return json_response(payload, status)
 
 
 @app.route("/api/bot/stop", methods=["POST"])
 @require_auth
 def stop_bot():
-    global BOT_PROCESS, BOT_LOG_HANDLE
-    if BOT_PROCESS is not None and BOT_PROCESS.poll() is None:
-        try:
-            BOT_PROCESS.terminate()
-            BOT_PROCESS.wait(timeout=5)
-        except Exception:
-            try:
-                BOT_PROCESS.kill()
-            except Exception:
-                pass
-
-    if BOT_LOG_HANDLE and not BOT_LOG_HANDLE.closed:
-        try:
-            BOT_LOG_HANDLE.write(f"===== BOT STOP {datetime.now(timezone.utc).isoformat()} =====\n")
-            BOT_LOG_HANDLE.close()
-        except Exception:
-            pass
-
-    state = load_telegram_state()
-    state["is_running"] = False
-    save_telegram_state(state)
-
-    return json_response({"success": True, "message": "Bot stopped"})
+    ensure_telegram_remote_loop()
+    payload, status = _stop_bot_engine(trigger="api")
+    return json_response(payload, status)
 
 
 @app.route("/api/bot/logs", methods=["GET"])
@@ -1500,7 +1705,7 @@ def update_bot_config():
     if "risk_percent" in payload:
         try:
             risk = float(payload.get("risk_percent", cfg["risk_percent"]))
-            cfg["risk_percent"] = round(max(0.01, min(100.0, risk)), 2)
+            cfg["risk_percent"] = round(max(MIN_BOT_RISK_PERCENT, min(MAX_BOT_RISK_PERCENT, risk)), 2)
         except Exception:
             return json_response({"success": False, "message": "Invalid risk_percent"}, 400)
 
@@ -1511,12 +1716,95 @@ def update_bot_config():
         enabled = sorted([s for s in symbols if s in SYMBOLS])
         cfg["enabled_symbols"] = enabled
 
+    if "max_daily_drawdown_pct" in payload:
+        try:
+            value = float(payload.get("max_daily_drawdown_pct", cfg["max_daily_drawdown_pct"]))
+            cfg["max_daily_drawdown_pct"] = round(max(0.5, min(25.0, value)), 2)
+        except Exception:
+            return json_response({"success": False, "message": "Invalid max_daily_drawdown_pct"}, 400)
+
+    if "max_margin_usage_pct" in payload:
+        try:
+            value = float(payload.get("max_margin_usage_pct", cfg["max_margin_usage_pct"]))
+            cfg["max_margin_usage_pct"] = round(max(5.0, min(95.0, value)), 2)
+        except Exception:
+            return json_response({"success": False, "message": "Invalid max_margin_usage_pct"}, 400)
+
+    if "daily_drawdown_adjustment_usd" in payload:
+        try:
+            value = float(payload.get("daily_drawdown_adjustment_usd", cfg["daily_drawdown_adjustment_usd"]))
+            cfg["daily_drawdown_adjustment_usd"] = round(value, 2)
+        except Exception:
+            return json_response({"success": False, "message": "Invalid daily_drawdown_adjustment_usd"}, 400)
+
     write_bot_config({
         "risk_percent": cfg["risk_percent"],
+        "max_daily_drawdown_pct": cfg["max_daily_drawdown_pct"],
+        "max_margin_usage_pct": cfg["max_margin_usage_pct"],
+        "daily_drawdown_adjustment_usd": cfg["daily_drawdown_adjustment_usd"],
         "enabled_symbols": cfg["enabled_symbols"],
     })
 
     return json_response({"success": True, **cfg})
+
+
+def estimate_daily_pnl_from_trades() -> float:
+    if not TRADES_FILE.exists():
+        return 0.0
+    try:
+        df = pd.read_csv(TRADES_FILE)
+    except Exception:
+        return 0.0
+
+    if df.empty:
+        return 0.0
+
+    ts_col = None
+    for candidate in ("timestamp", "exit_time", "time"):
+        if candidate in df.columns:
+            ts_col = candidate
+            break
+    if ts_col is None:
+        return 0.0
+
+    pnl_col = None
+    for candidate in ("pnl", "profit", "PnL"):
+        if candidate in df.columns:
+            pnl_col = candidate
+            break
+    if pnl_col is None:
+        return 0.0
+
+    try:
+        df[ts_col] = pd.to_datetime(df[ts_col], errors="coerce", utc=True)
+        today = datetime.now(timezone.utc).date()
+        day_df = df[df[ts_col].dt.date == today]
+        return float(day_df[pnl_col].fillna(0).astype(float).sum()) if not day_df.empty else 0.0
+    except Exception:
+        return 0.0
+
+
+@app.route("/api/bot/config/reset-drawdown", methods=["POST"])
+@require_auth
+def reset_daily_drawdown_adjustment():
+    cfg = read_bot_config()
+    daily_pnl = estimate_daily_pnl_from_trades()
+    cfg["daily_drawdown_adjustment_usd"] = round(-daily_pnl, 2)
+
+    write_bot_config({
+        "risk_percent": cfg["risk_percent"],
+        "max_daily_drawdown_pct": cfg["max_daily_drawdown_pct"],
+        "max_margin_usage_pct": cfg["max_margin_usage_pct"],
+        "daily_drawdown_adjustment_usd": cfg["daily_drawdown_adjustment_usd"],
+        "enabled_symbols": cfg["enabled_symbols"],
+    })
+
+    return json_response({
+        "success": True,
+        **cfg,
+        "daily_pnl_estimate": round(daily_pnl, 2),
+        "message": "Daily drawdown adjustment reset for current day.",
+    })
 
 
 @app.route("/api/bot/activity", methods=["GET"])
@@ -1724,4 +2012,5 @@ def health_check():
 
 if __name__ == "__main__":
     init_db()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    ensure_telegram_remote_loop()
+    app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)

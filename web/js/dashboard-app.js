@@ -64,6 +64,71 @@ async function apiFetch(path, options = {}) {
     }
 }
 
+async function apiFetchWithMeta(path, options = {}) {
+    const token = getToken();
+    const headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+        if (response.status === 401) {
+            localStorage.removeItem('zenith_token');
+            localStorage.removeItem('ultima_token');
+            window.location.href = 'login.html';
+            return { ok: false, status: 401, data: null };
+        }
+
+        let data = null;
+        try {
+            data = await response.json();
+        } catch (_) {
+            data = null;
+        }
+        return { ok: response.ok, status: response.status, data };
+    } catch (e) {
+        console.error('API error:', path, e);
+        return { ok: false, status: 0, data: null };
+    }
+}
+
+function isMt5UnavailableError(payload) {
+    if (!payload) return false;
+    if (payload.error_code === 'MT5_NOT_AVAILABLE') return true;
+
+    const text = `${payload.message || ''}\n${payload.logs || ''}`.toLowerCase();
+    return (
+        text.includes('mt5 init failed') ||
+        text.includes('cannot start without mt5 connection') ||
+        text.includes("no module named 'metatrader5'") ||
+        text.includes('no module named "metatrader5"')
+    );
+}
+
+function openMt5HelpPopup(payload = {}) {
+    const modal = document.getElementById('mt5HelpModal');
+    if (!modal) return;
+
+    const messageEl = document.getElementById('mt5HelpMessage');
+    const linkEl = document.getElementById('mt5InstallLink');
+
+    if (messageEl) {
+        messageEl.textContent = payload.help_message || 'The bot could not start because MetaTrader 5 is not available on this machine.';
+    }
+    if (linkEl) {
+        linkEl.href = payload.help_url || 'https://www.metatrader5.com/en/download';
+    }
+
+    modal.classList.add('is-open');
+    modal.setAttribute('aria-hidden', 'false');
+}
+
+function closeMt5HelpPopup() {
+    const modal = document.getElementById('mt5HelpModal');
+    if (!modal) return;
+    modal.classList.remove('is-open');
+    modal.setAttribute('aria-hidden', 'true');
+}
+
 function setStatusText(el, message, isError = false) {
     if (!el) return;
     el.textContent = message;
@@ -264,6 +329,17 @@ async function loadStatus() {
     tickLiveStatusClock();
 }
 
+function refreshStatCardColors() {
+    document.querySelectorAll('.stat-card').forEach(card => {
+        const valEl = card.querySelector('.stat-value [id]') || card.querySelector('.stat-value span');
+        if (!valEl) return;
+        const raw = valEl.textContent.replace(/[^0-9.\-]/g, '');
+        const num = parseFloat(raw);
+        const isZero = isNaN(num) || num === 0;
+        card.classList.toggle('zero-val', isZero);
+    });
+}
+
 async function loadMetrics() {
     const m = await apiFetch('/metrics');
     if (!m) return;
@@ -279,6 +355,7 @@ async function loadMetrics() {
     if ($('avgWin')) $('avgWin').textContent = `+$${Number(m.average_win || 0).toFixed(2)}`;
     if ($('avgLoss')) $('avgLoss').textContent = `-$${Number(m.average_loss || 0).toFixed(2)}`;
     if ($('largestWin')) $('largestWin').textContent = '+$0.00';
+    refreshStatCardColors();
 }
 
 async function loadTrades() {
@@ -353,9 +430,9 @@ async function handleStartStop() {
 
     let resp;
     if (status.status === 'running') {
-        resp = await apiFetch('/bot/stop', { method: 'POST' });
+        resp = await apiFetchWithMeta('/bot/stop', { method: 'POST' });
     } else {
-        resp = await apiFetch('/bot/start', { method: 'POST', body: JSON.stringify({ strategy: 'ict_smc' }) });
+        resp = await apiFetchWithMeta('/bot/start', { method: 'POST', body: JSON.stringify({ strategy: 'ict_smc' }) });
     }
 
     startStopPendingAction = null;
@@ -363,10 +440,13 @@ async function handleStartStop() {
         btn.disabled = false;
     }
 
-    if (!resp) {
+    if (!resp?.ok) {
         renderStartStopButton({ isRunning: status.status === 'running', loading: false });
         if (btn) btn.classList.add('is-error');
         setTimeout(() => btn?.classList.remove('is-error'), 500);
+        if (action === 'start' && isMt5UnavailableError(resp?.data)) {
+            openMt5HelpPopup(resp.data);
+        }
         return;
     }
     
@@ -461,6 +541,23 @@ async function runBacktest() {
     }
 
     const riskPct = parseFloat(document.getElementById('btRiskPct')?.value) || 1.0;
+
+    // Always enqueue a REAL persisted run via backtest_improved.py
+    try {
+        const queued = await apiFetch('/backtest/run', {
+            method: 'POST',
+            body: JSON.stringify({ symbol, mode: 'standard', split_ratio: 0.7, mc_iterations: 200 })
+        });
+        if (queued?.success && queued?.run_id) {
+            setStatusText(status, `Queued real engine run: ${queued.run_id} (backtest_improved.py)`);
+            setTimeout(async () => {
+                await loadRuns();
+                await loadRobustness();
+            }, 1200);
+        }
+    } catch (e) {
+        console.warn('Could not queue real persisted backtest run:', e);
+    }
 
     let data = null;
     try {
@@ -1008,37 +1105,6 @@ function finishBacktest() {
     if (stopBtn) stopBtn.disabled = true;
     const status = document.getElementById('btStatus');
     setStatusText(status, 'Backtest animation complete.');
-    
-    // save the backtest run
-    if (btCandles && btCandles.length > 0) {
-        saveBacktestRun();
-    }
-}
-
-async function saveBacktestRun() {
-    const symbol = document.getElementById('btSymbol')?.value || 'EURUSD';
-    const result = {
-        symbol,
-        candles: btCandles,
-        trades: btTrades,
-        metrics: {
-            total_trades: btStats.trades,
-            win_rate: btStats.trades > 0 ? (btStats.wins / btStats.trades * 100).toFixed(1) : 0,
-            total_profit: btStats.pnl.toFixed(2),
-            final_balance: btStats.balance
-        },
-        timestamp: new Date().toISOString()
-    };
-    
-    // save via API
-    const r = await apiFetch('/backtest/save', {
-        method: 'POST',
-        body: JSON.stringify(result)
-    });
-    
-    if (r && r.success) {
-        console.log('Backtest run saved:', r.run_id);
-    }
 }
 
 async function runSuite() {
@@ -1237,6 +1303,12 @@ async function loadBotConfig() {
     botConfigCache = cfg;
     const riskInput = document.getElementById('botRiskInput');
     if (riskInput) riskInput.value = Number(cfg.risk_percent || 1).toFixed(2);
+    const dailyDdInput = document.getElementById('botDailyDdInput');
+    if (dailyDdInput) dailyDdInput.value = Number(cfg.max_daily_drawdown_pct || 5).toFixed(2);
+    const marginCapInput = document.getElementById('botMarginCapInput');
+    if (marginCapInput) marginCapInput.value = Number(cfg.max_margin_usage_pct || 20).toFixed(2);
+    const ddAdjInput = document.getElementById('botDdAdjustmentInput');
+    if (ddAdjInput) ddAdjInput.value = Number(cfg.daily_drawdown_adjustment_usd || 0).toFixed(2);
     renderBotSymbols(cfg);
 }
 
@@ -1255,6 +1327,12 @@ async function saveBotConfig(payload, successMessage = 'Saved', options = {}) {
     botConfigCache = res;
     const riskInput = document.getElementById('botRiskInput');
     if (riskInput) riskInput.value = Number(res.risk_percent || 1).toFixed(2);
+    const dailyDdInput = document.getElementById('botDailyDdInput');
+    if (dailyDdInput) dailyDdInput.value = Number(res.max_daily_drawdown_pct || 5).toFixed(2);
+    const marginCapInput = document.getElementById('botMarginCapInput');
+    if (marginCapInput) marginCapInput.value = Number(res.max_margin_usage_pct || 20).toFixed(2);
+    const ddAdjInput = document.getElementById('botDdAdjustmentInput');
+    if (ddAdjInput) ddAdjInput.value = Number(res.daily_drawdown_adjustment_usd || 0).toFixed(2);
     if (!options.silentRender) renderBotSymbols(res);
     setStatusText(statusEl, successMessage);
     return true;
@@ -1264,11 +1342,54 @@ async function saveBotRisk() {
     const riskInput = document.getElementById('botRiskInput');
     if (!riskInput) return;
     const risk = Number(riskInput.value);
-    if (!Number.isFinite(risk) || risk < 0.01 || risk > 100) {
-        setStatusText(document.getElementById('botConfigStatus'), 'Risk must be 0.01 - 100', true);
+    if (!Number.isFinite(risk) || risk < 0.10 || risk > 2.00) {
+        setStatusText(document.getElementById('botConfigStatus'), 'Risk must be 0.10 - 2.00', true);
         return;
     }
     await saveBotConfig({ risk_percent: risk }, `Risk saved (${risk.toFixed(2)}%)`);
+}
+
+async function saveBotGuards() {
+    const dailyDdInput = document.getElementById('botDailyDdInput');
+    const marginCapInput = document.getElementById('botMarginCapInput');
+    const ddAdjInput = document.getElementById('botDdAdjustmentInput');
+    if (!dailyDdInput || !marginCapInput || !ddAdjInput) return;
+
+    const dailyDd = Number(dailyDdInput.value);
+    const marginCap = Number(marginCapInput.value);
+    const ddAdj = Number(ddAdjInput.value);
+
+    if (!Number.isFinite(dailyDd) || dailyDd < 0.5 || dailyDd > 25) {
+        setStatusText(document.getElementById('botConfigStatus'), 'Daily DD must be 0.5 - 25.0', true);
+        return;
+    }
+    if (!Number.isFinite(marginCap) || marginCap < 5 || marginCap > 95) {
+        setStatusText(document.getElementById('botConfigStatus'), 'Margin cap must be 5 - 95', true);
+        return;
+    }
+    if (!Number.isFinite(ddAdj)) {
+        setStatusText(document.getElementById('botConfigStatus'), 'Daily DD adjustment must be a valid number', true);
+        return;
+    }
+
+    await saveBotConfig({
+        max_daily_drawdown_pct: dailyDd,
+        max_margin_usage_pct: marginCap,
+        daily_drawdown_adjustment_usd: ddAdj,
+    }, `Guard limits saved (DD ${dailyDd.toFixed(2)}%, Margin ${marginCap.toFixed(1)}%)`);
+}
+
+async function resetDrawdownAdjustment() {
+    const statusEl = document.getElementById('botConfigStatus');
+    const res = await apiFetch('/bot/config/reset-drawdown', { method: 'POST' });
+    if (!res || res.success === false) {
+        setStatusText(statusEl, 'Failed to reset daily drawdown adjustment', true);
+        return;
+    }
+    botConfigCache = res;
+    const ddAdjInput = document.getElementById('botDdAdjustmentInput');
+    if (ddAdjInput) ddAdjInput.value = Number(res.daily_drawdown_adjustment_usd || 0).toFixed(2);
+    setStatusText(statusEl, `Daily DD reset applied (PnL estimate: ${Number(res.daily_pnl_estimate || 0).toFixed(2)} USD)`);
 }
 
 async function setAllSymbols(enabled) {
@@ -1308,12 +1429,14 @@ async function loadBotMonitor() {
     setText('liveFailedCount', summary.failed || 0);
 
     const positions = positionsRes?.positions || [];
+    const posMsg = positionsRes?.message || '';
     setText('liveOpenPositionsCount', positions.length);
 
     const posTable = document.getElementById('liveOpenPositionsTable');
     if (posTable) {
         if (!positions.length) {
-            posTable.innerHTML = '<tr class="empty-state-row"><td colspan="7">No open positions</td></tr>';
+            const hint = posMsg ? `<br><small style="color:var(--z-text-3);font-size:0.75rem">${posMsg}</small>` : '';
+            posTable.innerHTML = `<tr class="empty-state-row"><td colspan="7">No open positions${hint}</td></tr>`;
         } else {
             posTable.innerHTML = positions.map((p) => `
                 <tr>
@@ -1380,11 +1503,16 @@ function initEvents() {
     bind('runMonteCarloBtn', runMonteCarlo);
     bind('logoutBtn', logout);
     bind('saveBotRiskBtn', saveBotRisk);
+    bind('saveBotGuardsBtn', saveBotGuards);
+    bind('resetDrawdownAdjBtn', resetDrawdownAdjustment);
     bind('enableAllSymbolsBtn', () => setAllSymbols(true));
     bind('disableAllSymbolsBtn', () => setAllSymbols(false));
     bind('reloadBotConfigBtn', loadBotConfig);
     bind('refreshLiveMonitorBtn', loadBotMonitor);
     bind('saveTelegramConfigBtn', saveTelegramConfig);
+    bind('mt5HelpCloseBtn', closeMt5HelpPopup);
+    bind('mt5HelpOkBtn', closeMt5HelpPopup);
+    bind('mt5HelpBackdrop', closeMt5HelpPopup);
 }
 
 // ─── Monte Carlo Simulation ───

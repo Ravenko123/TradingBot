@@ -164,13 +164,13 @@ ATR_PERIOD = 14
 ADX_PERIOD = 14
 ADX_THRESHOLD = 25       # Doc: ADX < 25 = consolidation → skip
 LOOKBACK_BARS = 500      # enough bars for indicator calculation
-TP_RR_RATIO = 2.0        # Take Profit at 2:1 risk-reward (TP = 2× SL distance)
+TP_RR_RATIO = 2.5        # Take Profit at 2.5:1 risk-reward (aligned with improved backtest engine)
 
 # ICT / SMC constants (ported from validated backtest engine)
 BOS_VALIDITY = 50        # Order Block zone valid for 50 bars
 OB_SCAN = 20             # Look back up to 20 bars for OB candle
 SWING_LOOKBACK = 5       # Swing-point detection window
-MIN_CONFLUENCE = 3       # Minimum confluence score to enter
+MIN_CONFLUENCE = 4       # Minimum confluence score to enter (stricter filter for higher-quality setups)
 COOLDOWN_BARS = 3        # Minimum bars between signals
 
 # Safety mechanisms — circuit breakers
@@ -180,6 +180,8 @@ MAX_MARGIN_USAGE   = float(os.getenv('MAX_MARGIN_USAGE', '20.0'))    # Block ord
 # Runtime config persistence
 CONFIG_FILE = Path(__file__).parent / 'runtime_config.json'
 DEFAULT_RISK = float(os.getenv('RISK_PER_TRADE', '2.0'))  # Doc: 2 % per trade
+MIN_RUNTIME_RISK = float(os.getenv('MIN_RUNTIME_RISK', '0.10'))
+MAX_RUNTIME_RISK = float(os.getenv('MAX_RUNTIME_RISK', '2.00'))
 
 # Track last signal to avoid spam
 last_signals = {}
@@ -1003,8 +1005,14 @@ def generate_signal(df: pd.DataFrame, params: dict, symbol: str, sym_info: dict)
         set_state(BotState.IDLE)
         return None
 
-    # ADX filter — doc: ADX < 25 = consolidation → skip
-    if not np.isfinite(adx_val) or adx_val < adx_th:
+    # ADX filter — require extra buffer over threshold to reduce chop entries
+    if not np.isfinite(adx_val) or adx_val < (adx_th + 2.0):
+        return None
+
+    # Spread filter — skip if spread is too large relative to ATR (cost too high)
+    tick_size = max(float(sym_info.get('tick_size', 0.0)), 0.0)
+    spread_price = spread_points * tick_size
+    if atr_val > 0 and spread_price / atr_val > 0.16:
         return None
 
     bullish_trend = ema_f > ema_s
@@ -1120,6 +1128,9 @@ def load_config() -> dict:
     cfg = {
         'risk_percent': DEFAULT_RISK,
         'enabled_symbols': SYMBOLS.copy(),
+        'max_daily_drawdown_pct': MAX_DAILY_DRAWDOWN,
+        'max_margin_usage_pct': MAX_MARGIN_USAGE,
+        'daily_drawdown_adjustment_usd': 0.0,
     }
     if CONFIG_FILE.exists():
         try:
@@ -1127,8 +1138,11 @@ def load_config() -> dict:
             cfg.update(data)
         except Exception:
             pass
-    cfg['risk_percent'] = max(0.01, min(100.0, float(cfg.get('risk_percent', DEFAULT_RISK))))
+    cfg['risk_percent'] = max(MIN_RUNTIME_RISK, min(MAX_RUNTIME_RISK, float(cfg.get('risk_percent', DEFAULT_RISK))))
     cfg['enabled_symbols'] = [s for s in cfg.get('enabled_symbols', SYMBOLS) if s in SYMBOLS]
+    cfg['max_daily_drawdown_pct'] = max(0.5, min(25.0, float(cfg.get('max_daily_drawdown_pct', MAX_DAILY_DRAWDOWN))))
+    cfg['max_margin_usage_pct'] = max(5.0, min(95.0, float(cfg.get('max_margin_usage_pct', MAX_MARGIN_USAGE))))
+    cfg['daily_drawdown_adjustment_usd'] = float(cfg.get('daily_drawdown_adjustment_usd', 0.0))
     return cfg
 
 
@@ -1181,7 +1195,7 @@ class TelegramBot:
                         "🤖 Ultima Trading Bot\n"
                         "--------------------------------\n"
                         "📊 Trading Commands\n"
-                        "/risk [0.01-100] - Set risk % per trade\n"
+                        "/risk [0.10-2.00] - Set risk % per trade\n"
                         "/positions - View open positions\n"
                         "/status - Bot status & settings\n"
                         "/ping - Check bot connectivity\n\n"
@@ -1419,14 +1433,14 @@ class TelegramBot:
                     if len(parts) >= 2:
                         try:
                             val = float(parts[1])
-                            if 0.01 <= val <= 100.0:
+                            if MIN_RUNTIME_RISK <= val <= MAX_RUNTIME_RISK:
                                 cfg['risk_percent'] = round(val, 2)
                                 send_telegram_message(f"✅ <b>Risk Updated</b>\n{cfg['risk_percent']}% per trade")
                                 changed = True
                             else:
-                                send_telegram_message("❌ Risk must be between 0.01-100%\nExample: /risk 2.5")
+                                send_telegram_message(f"❌ Risk must be between {MIN_RUNTIME_RISK:.2f}-{MAX_RUNTIME_RISK:.2f}%\nExample: /risk 0.5")
                         except ValueError:
-                            send_telegram_message("❌ Invalid format\nExample: /risk 2.5")
+                            send_telegram_message("❌ Invalid format\nExample: /risk 0.5")
                     else:
                         send_telegram_message(f"📊 <b>Current Risk</b>\n{cfg['risk_percent']}% per trade\n\nTo change: /risk [value]")
                 
@@ -1444,6 +1458,9 @@ class TelegramBot:
                         "━━━━━━━━━━━━━━━━\n"
                         f"🔄 State: {state_name}\n"
                         f"⚠️ Risk: {cfg['risk_percent']}% per trade\n"
+                        f"🛑 Daily DD Limit: {cfg.get('max_daily_drawdown_pct', MAX_DAILY_DRAWDOWN):.2f}%\n"
+                        f"📉 DD Adjustment: ${cfg.get('daily_drawdown_adjustment_usd', 0.0):.2f}\n"
+                        f"🧱 Margin Cap: {cfg.get('max_margin_usage_pct', MAX_MARGIN_USAGE):.1f}%\n"
                         f"✅ Active Symbols: {len(cfg['enabled_symbols'])}/{len(SYMBOLS)}\n"
                         f"   {enabled}\n"
                         f"━━━━━━━━━━━━━━━━\n"
@@ -1696,8 +1713,8 @@ def process_single_symbol(symbol: str, enabled: set, risk: float) -> tuple:
             else:
                 unrealized = entry_price - current_price
 
-            # Stage 1: At 1R profit → break-even (SL = entry)
-            if be_stage < 1 and initial_risk > 0 and unrealized >= initial_risk:
+            # Stage 1: At 1.5R profit → break-even (SL = entry)
+            if be_stage < 1 and initial_risk > 0 and unrealized >= initial_risk * 1.5:
                 new_sl = round(entry_price, digits)
                 if (existing_pos['direction'] == 'BUY' and new_sl > current_sl) or \
                    (existing_pos['direction'] == 'SELL' and new_sl < current_sl):
@@ -1712,12 +1729,12 @@ def process_single_symbol(symbol: str, enabled: set, risk: float) -> tuple:
                         )
                         be_stage = 1
 
-            # Stage 2: At 50 % of target → SL moves to 25 % profit level
-            if be_stage < 2 and target_profit > 0 and unrealized >= target_profit * 0.5:
+            # Stage 2: At 80 % of target → SL moves to 50 % profit level
+            if be_stage < 2 and target_profit > 0 and unrealized >= target_profit * 0.8:
                 if existing_pos['direction'] == 'BUY':
-                    new_sl = round(entry_price + target_profit * 0.25, digits)
+                    new_sl = round(entry_price + target_profit * 0.5, digits)
                 else:
-                    new_sl = round(entry_price - target_profit * 0.25, digits)
+                    new_sl = round(entry_price - target_profit * 0.5, digits)
                 if (existing_pos['direction'] == 'BUY' and new_sl > current_sl) or \
                    (existing_pos['direction'] == 'SELL' and new_sl < current_sl):
                     if modify_position_sl_tp(existing_pos, new_sl=new_sl):
@@ -1804,6 +1821,9 @@ def scan_markets(cfg: dict, verbose: bool = False):
     
     enabled = set(cfg.get('enabled_symbols', SYMBOLS))
     risk = cfg.get('risk_percent', DEFAULT_RISK)
+    max_daily_dd = float(cfg.get('max_daily_drawdown_pct', MAX_DAILY_DRAWDOWN))
+    max_margin_usage = float(cfg.get('max_margin_usage_pct', MAX_MARGIN_USAGE))
+    drawdown_adjustment = float(cfg.get('daily_drawdown_adjustment_usd', 0.0))
     
     # First, check for closed positions (SL/TP hit) - keep this sequential
     current_positions = {pos.symbol: pos for pos in get_open_positions()}
@@ -1940,13 +1960,15 @@ def scan_markets(cfg: dict, verbose: bool = False):
         try:
             account = mt5.account_info()
             if account:
-                daily_pnl = get_daily_pnl()
-                if account.balance > 0 and abs(daily_pnl) / account.balance * 100 >= MAX_DAILY_DRAWDOWN and daily_pnl < 0:
-                    print(f"[!] CIRCUIT BREAKER: daily loss ${daily_pnl:.2f} exceeds {MAX_DAILY_DRAWDOWN}% — blocking new trades")
-                    log_event(f"Circuit breaker triggered: daily PnL ${daily_pnl:.2f}", "WARN")
+                daily_pnl_raw = get_daily_pnl()
+                daily_pnl = daily_pnl_raw + drawdown_adjustment
+                if account.balance > 0 and abs(daily_pnl) / account.balance * 100 >= max_daily_dd and daily_pnl < 0:
+                    print(f"[!] CIRCUIT BREAKER: adjusted daily loss ${daily_pnl:.2f} exceeds {max_daily_dd}% — blocking new trades")
+                    log_event(f"Circuit breaker triggered: adjusted daily PnL ${daily_pnl:.2f}", "WARN")
                     send_telegram_message(
                         f"🚨 <b>Circuit Breaker</b>\n"
-                        f"Daily loss ${daily_pnl:.2f} exceeds {MAX_DAILY_DRAWDOWN}%\n"
+                        f"Adjusted daily loss ${daily_pnl:.2f} exceeds {max_daily_dd}%\n"
+                        f"(raw ${daily_pnl_raw:.2f}, adjustment ${drawdown_adjustment:.2f})\n"
                         f"New trades blocked until tomorrow"
                     )
                     status.append(f"{symbol}:BLOCKED")
@@ -1960,8 +1982,8 @@ def scan_markets(cfg: dict, verbose: bool = False):
             account = mt5.account_info()
             if account and account.balance > 0:
                 margin_used_pct = (account.balance - account.margin_free) / account.balance * 100
-                if margin_used_pct > MAX_MARGIN_USAGE:
-                    print(f"[!] MARGIN LIMIT: {margin_used_pct:.1f}% margin used > {MAX_MARGIN_USAGE}% — blocking new order")
+                if margin_used_pct > max_margin_usage:
+                    print(f"[!] MARGIN LIMIT: {margin_used_pct:.1f}% margin used > {max_margin_usage}% — blocking new order")
                     log_event(f"Margin protection: {margin_used_pct:.1f}% used", "WARN")
                     status.append(f"{symbol}:MARGIN")
                     continue

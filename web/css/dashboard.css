@@ -24,38 +24,53 @@
     --my: 50%;
     --mxn: 0;
     --myn: 0;
-    --grid-hover: 0.46;
+    --grid-hover: 0.62;
     position: fixed;
     inset: 0;
     z-index: 0;
     pointer-events: none;
     background-image:
-        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
-    background-size: 74px 74px;
-    background-position: calc(var(--mxn) * 12px) calc(var(--myn) * 10px);
-    opacity: calc(0.34 + var(--grid-hover) * 0.32);
-    transform: perspective(980px)
-        rotateX(calc(var(--myn) * -1.6deg))
-        rotateY(calc(var(--mxn) * 1.6deg))
-        scale(calc(1 + var(--grid-hover) * 0.045));
-    will-change: transform;
+        linear-gradient(rgba(0,255,135,0.042) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,255,135,0.042) 1px, transparent 1px);
+    background-size: 76px 76px;
+    background-position: 0 0;
+    opacity: calc(0.3 + var(--grid-hover) * 0.28);
+    filter: brightness(calc(0.94 + var(--grid-hover) * 0.24)) saturate(calc(1 + var(--grid-hover) * 0.34));
+    will-change: opacity, filter;
 }
 
 .dashboard-body .dash-reactive-grid::before {
     content: '';
     position: absolute;
     inset: 0;
-    background: radial-gradient(calc(180px + var(--grid-hover) * 180px) circle at var(--mx) var(--my), rgba(0,255,135, calc(0.14 + var(--grid-hover) * 0.22)) 0%, rgba(0,255,135, calc(0.05 + var(--grid-hover) * 0.1)) 38%, transparent 72%);
-    opacity: calc(0.46 + var(--grid-hover) * 0.44);
+    background-image:
+        linear-gradient(rgba(0,255,135, calc(0.055 + var(--grid-hover) * 0.12)) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,255,135, calc(0.055 + var(--grid-hover) * 0.12)) 1px, transparent 1px);
+    background-size: 76px 76px;
+    background-position: 0 0;
+    mask-image: radial-gradient(calc(130px + var(--grid-hover) * 140px) circle at var(--mx) var(--my), black 0%, rgba(0,0,0,0.95) 22%, transparent 72%);
+    -webkit-mask-image: radial-gradient(calc(130px + var(--grid-hover) * 140px) circle at var(--mx) var(--my), black 0%, rgba(0,0,0,0.95) 22%, transparent 72%);
+    opacity: calc(0.42 + var(--grid-hover) * 0.24);
 }
 
 .dashboard-body .dash-reactive-grid::after {
     content: '';
     position: absolute;
     inset: 0;
-    background: radial-gradient(calc(80px + var(--grid-hover) * 150px) circle at var(--mx) var(--my), rgba(255,255,255, calc(0.03 + var(--grid-hover) * 0.18)) 0%, rgba(0,255,135, calc(0.025 + var(--grid-hover) * 0.08)) 34%, transparent 68%);
-    opacity: calc(0.14 + var(--grid-hover) * 0.34);
+    background-image:
+        linear-gradient(rgba(0,255,135, calc(0.024 + var(--grid-hover) * 0.065)) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,255,135, calc(0.024 + var(--grid-hover) * 0.065)) 1px, transparent 1px);
+    background-size: 152px 152px;
+    background-position: 0 0;
+    opacity: calc(0.13 + var(--grid-hover) * 0.14);
+}
+
+.dashboard-body .dash-space-stars {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.72;
 }
 
 .perf-mode .dash-nebula-canvas,
@@ -587,6 +602,17 @@
 
 .stat-label i {
     color: var(--z-green);
+    transition: color 0.4s ease;
+}
+.stat-card.zero-val .stat-label i {
+    color: var(--z-text-3);
+}
+.stat-card.zero-val .stat-value {
+    filter: none;
+    background: linear-gradient(135deg, var(--z-text-3) 0%, #4a5568 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
 }
 
 .stat-value {
@@ -1244,6 +1270,75 @@
     text-shadow: 0 0 12px rgba(255, 107, 107, 0.6);
     background: rgba(255, 107, 107, 0.08);
     animation: btFloatLoss 2.2s ease forwards;
+}
+
+.mt5-help-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 2500;
+    display: none;
+}
+
+.mt5-help-modal.is-open {
+    display: block;
+}
+
+.mt5-help-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.62);
+    backdrop-filter: blur(4px);
+}
+
+.mt5-help-card {
+    position: relative;
+    width: min(560px, calc(100vw - 36px));
+    margin: min(12vh, 120px) auto 0;
+    padding: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, rgba(7, 11, 17, 0.97) 0%, rgba(4, 8, 13, 0.98) 100%);
+    box-shadow: 0 22px 50px rgba(0, 0, 0, 0.45), 0 0 30px rgba(0, 255, 135, 0.08);
+}
+
+.mt5-help-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.mt5-help-header h3 {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 1rem;
+    color: var(--z-text-1);
+}
+
+.mt5-help-header h3 i {
+    color: var(--z-green);
+}
+
+.mt5-help-copy {
+    margin: 12px 0;
+    color: var(--z-text-2);
+    line-height: 1.55;
+}
+
+.mt5-help-steps {
+    margin: 0 0 12px;
+    padding-left: 18px;
+    color: var(--z-text-2);
+    display: grid;
+    gap: 6px;
+}
+
+.mt5-help-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
 }
 
 @keyframes btFloatWin {
@@ -2460,7 +2555,7 @@
 /* ─── Monte Carlo Panel ─── */
 .mc-panel {
     padding: 24px;
-    margin-top: 24px;
+    margin-top: 0;
     position: relative;
     overflow: hidden;
 }
@@ -3752,6 +3847,146 @@
             transform: scale(0.88);
             transform-origin: top left;
             width: 113.6%;
+            overflow-x: hidden;
+        }
+    }
+}
+
+/* ═══════════════ SPACING CONSISTENCY PASS ═══════════════ */
+@media (min-width: 1025px) {
+    .dashboard-body {
+        --dash-space: clamp(18px, 1.4vw, 24px);
+    }
+
+    .dashboard-body {
+        --dash-sidebar-w: clamp(250px, 15vw, 300px) !important;
+        font-size: 14px !important;
+    }
+
+    .sidebar {
+        padding: clamp(16px, 1.05vw, 22px) !important;
+        gap: 24px !important;
+    }
+
+    .sidebar-link {
+        padding: 12px 16px !important;
+        gap: 12px !important;
+        font-size: 0.9rem !important;
+    }
+
+    .dashboard-main {
+        padding: var(--dash-space) !important;
+        gap: var(--dash-space) !important;
+    }
+
+    .dashboard-section {
+        gap: var(--dash-space) !important;
+    }
+
+    .top-bar {
+        top: var(--dash-space) !important;
+        padding: clamp(16px, 1.25vw, 24px) clamp(18px, 1.45vw, 28px) !important;
+        border-radius: 16px !important;
+    }
+
+    .section-header-dash {
+        gap: 8px !important;
+        margin-bottom: 0 !important;
+    }
+
+    .section-header-dash h2 {
+        font-size: 1.32rem !important;
+    }
+
+    .section-header-dash p {
+        font-size: 0.88rem !important;
+    }
+
+    .chart-card,
+    .metrics-card,
+    .form-card,
+    .table-card,
+    .robust-card,
+    .profile-card,
+    .stat-card,
+    .bt-controls,
+    .bt-report,
+    .bt-strategy-info,
+    .bt-tips,
+    .mc-panel,
+    .bt-chart-area,
+    .info-banner {
+        padding: 20px !important;
+        border-radius: 16px !important;
+    }
+
+    .form-group-grid,
+    .bt-controls-row,
+    .bt-live-layout,
+    .strategy-detail-grid,
+    .tips-grid,
+    .mc-explainer,
+    .bt-report-grid {
+        gap: 16px !important;
+
+    #backtest .bt-live-layout:not(:has(.bt-chart-area[style*="display: block"], .bt-report[style*="display: block"])) {
+        display: none;
+    }
+    }
+
+    .form-group-grid {
+        margin-bottom: 18px !important;
+    }
+}
+
+@media (max-width: 1024px) {
+    .dashboard-main {
+        padding: 18px !important;
+        gap: 18px !important;
+    }
+
+    .dashboard-section {
+        gap: 18px !important;
+    }
+
+    .chart-card,
+    .metrics-card,
+    .form-card,
+    .table-card,
+    .robust-card,
+    .profile-card,
+    .stat-card,
+    .bt-controls,
+    .bt-report,
+    .bt-strategy-info,
+    .bt-tips,
+    .mc-panel,
+    .bt-chart-area,
+    .info-banner {
+        padding: 16px !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .dashboard-main {
+        padding: 14px !important;
+        gap: 14px !important;
+    }
+
+    .dashboard-section {
+        gap: 14px !important;
+    }
+
+    .top-bar {
+        padding: 14px !important;
+    }
+}
+
+@supports not (zoom: 1) {
+    @media (min-width: 1025px) {
+        .dashboard-body {
+            transform: none !important;
+            width: auto !important;
             overflow-x: hidden;
         }
     }
