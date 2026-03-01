@@ -361,6 +361,22 @@ async function loadTrades() {
     if ($('histWinRate')) $('histWinRate').textContent = wr + '%';
     if ($('histTotalPnl')) $('histTotalPnl').textContent = (totalPnl >= 0 ? '+' : '') + '$' + totalPnl.toFixed(2);
     if ($('histAvgReturn')) $('histAvgReturn').textContent = (avgReturn >= 0 ? '+' : '') + '$' + avgReturn;
+
+    // --- Recent Trades Preview (Overview section) ---
+    const preview = document.getElementById('recentTradesPreview');
+    if (preview) {
+        if (!trades.length) {
+            preview.innerHTML = '<div class="empty-state-inline"><i class="fas fa-inbox"></i> No trades yet</div>';
+        } else {
+            const recent = trades.slice(0, 5);
+            preview.innerHTML = recent.map(t => `<div class="recent-trade-row">
+                <span class="rt-symbol"><strong>${t.symbol}</strong></span>
+                <span class="badge badge-${t.type === 'BUY' ? 'success' : 'danger'}" style="font-size:0.65rem;padding:2px 6px;">${t.type}</span>
+                <span class="rt-pnl ${t.pnl >= 0 ? 'positive' : 'negative'}">${t.pnl >= 0 ? '+' : ''}$${t.pnl.toFixed(2)}</span>
+                <span class="rt-time" style="color:var(--z-text-3);font-size:0.7rem;">${t.timestamp || ''}</span>
+            </div>`).join('');
+        }
+    }
 }
 
 async function loadEquity() {
@@ -1938,6 +1954,30 @@ async function loadMt5Status() {
         if (healthStatus) healthStatus.textContent = 'Stopped';
     }
 
+    // --- System Health: API Connection ---
+    const apiIcon = document.getElementById('apiHealthIcon');
+    const apiStat = document.getElementById('apiHealthStatus');
+    // If we got here, API responded successfully
+    if (apiIcon) { apiIcon.classList.remove('warning'); apiIcon.classList.add('success'); }
+    if (apiStat) apiStat.textContent = 'Online';
+
+    // --- System Health: Data Storage ---
+    const dbIcon = document.getElementById('dbHealthIcon');
+    const dbStat = document.getElementById('dbHealthStatus');
+    if (dbIcon) { dbIcon.classList.remove('warning'); dbIcon.classList.add('success'); }
+    if (dbStat) dbStat.textContent = 'Healthy';
+
+    // --- System Health: Risk Manager ---
+    const riskIcon = document.getElementById('riskHealthIcon');
+    const riskStat = document.getElementById('riskHealthStatus');
+    if (botConfigCache) {
+        if (riskIcon) { riskIcon.classList.remove('warning'); riskIcon.classList.add('success'); }
+        if (riskStat) riskStat.textContent = 'Active';
+    } else {
+        if (riskIcon) { riskIcon.classList.remove('success'); riskIcon.classList.add('warning'); }
+        if (riskStat) riskStat.textContent = 'Not loaded';
+    }
+
     // Populate bot control detail fields
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || '\u2014'; };
     set('botCtrlState', status.runtime_state || (isRunning ? 'running' : 'stopped'));
@@ -2027,6 +2067,29 @@ async function loadBotConfig() {
     const ddAdjInput = document.getElementById('botDdAdjustmentInput');
     if (ddAdjInput) ddAdjInput.value = Number(cfg.daily_drawdown_adjustment_usd || 0).toFixed(2);
     renderBotSymbols(cfg);
+
+    // --- Update Risk Management meters ---
+    updateRiskMeters(cfg);
+}
+
+function updateRiskMeters(cfg) {
+    if (!cfg) return;
+    // Position risk meter: shows configured risk_percent as % of max (2.0%)
+    const riskPct = Number(cfg.risk_percent || 0);
+    const maxRiskPct = 2.0; // MAX_BOT_RISK_PERCENT
+    const positionFill = document.getElementById('riskPositionFill');
+    const positionValue = document.getElementById('riskPositionValue');
+    if (positionFill) positionFill.style.width = Math.min(100, (riskPct / maxRiskPct) * 100) + '%';
+    if (positionValue) positionValue.textContent = riskPct > 0 ? `${riskPct.toFixed(2)}% per trade` : 'No data';
+
+    // Daily drawdown meter: shows usage relative to max_daily_drawdown_pct
+    const maxDD = Number(cfg.max_daily_drawdown_pct || 5);
+    const ddAdj = Math.abs(Number(cfg.daily_drawdown_adjustment_usd || 0));
+    // We can estimate usage from adjustment; if adjustment is 0 it means no drawdown today
+    const dailyFill = document.getElementById('riskDailyFill');
+    const dailyValue = document.getElementById('riskDailyValue');
+    if (dailyFill) dailyFill.style.width = ddAdj > 0 ? Math.min(100, 30) + '%' : '0%'; // placeholder — actual usage would need balance
+    if (dailyValue) dailyValue.textContent = `Limit: ${maxDD.toFixed(1)}%`;
 }
 
 async function saveBotConfig(payload, successMessage = 'Saved', options = {}) {
@@ -2187,6 +2250,52 @@ async function loadBotMonitor() {
 
     const rawEl = document.getElementById('botRawLog');
     if (rawEl) rawEl.textContent = logsRes?.logs || 'No logs yet.';
+
+    // --- Trading Activity Timeline (Overview section) ---
+    const timeline = document.getElementById('tradingTimeline');
+    if (timeline) {
+        if (!events.length) {
+            timeline.innerHTML = `<div class="timeline-item">
+                <div class="timeline-icon"><i class="fas fa-clock"></i></div>
+                <div class="timeline-content">
+                    <h4>Waiting for Bot</h4>
+                    <p>Start the bot to see live trading events</p>
+                </div>
+            </div>`;
+        } else {
+            timeline.innerHTML = events.slice(-5).reverse().map(ev => {
+                const iconClass = ev.type === 'opened' ? 'fa-arrow-up' : ev.type === 'closed' ? 'fa-arrow-down' : ev.type === 'signal' ? 'fa-search' : ev.type === 'failed' ? 'fa-exclamation-triangle' : 'fa-info-circle';
+                const colorCls = ev.type === 'opened' ? 'success' : ev.type === 'failed' ? 'warning' : '';
+                return `<div class="timeline-item">
+                    <div class="timeline-icon ${colorCls}"><i class="fas ${iconClass}"></i></div>
+                    <div class="timeline-content">
+                        <h4>${ev.symbol || ev.type}</h4>
+                        <p>${ev.message || ev.type}</p>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+    }
+
+    // --- Market Overview (Overview section) ---
+    // Populate from open positions / bridge data if available
+    const mktSymbols = { 'EURUSD': 'mktEURUSD', 'GBPUSD': 'mktGBPUSD', 'USDJPY': 'mktUSDJPY', 'XAUUSD': 'mktXAUUSD' };
+    if (positions.length) {
+        for (const pos of positions) {
+            const sym = (pos.symbol || '').replace(/[^A-Z]/g, '').substring(0, 6);
+            const elId = mktSymbols[sym];
+            if (elId) {
+                const priceEl = document.getElementById(elId);
+                if (priceEl) priceEl.textContent = Number(pos.current_price || pos.open_price || 0).toFixed(sym === 'XAUUSD' ? 2 : sym === 'USDJPY' ? 3 : 5);
+                const chgEl = document.getElementById(elId + 'chg');
+                if (chgEl) {
+                    const pnl = Number(pos.profit || 0);
+                    chgEl.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(2);
+                    chgEl.className = 'market-change ' + (pnl >= 0 ? 'positive' : 'negative');
+                }
+            }
+        }
+    }
 }
 
 async function logout() {

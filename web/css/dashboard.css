@@ -528,6 +528,14 @@
     background-clip: text;
 }
 
+/* Global: all card h3 icons should be green */
+.glass-card > h3 > i,
+.glass-card h3 > i,
+.bt-report-header h3 > i,
+.run-detail-panel h3 > i {
+    color: var(--z-green);
+}
+
 .section-header-dash p {
     color: var(--z-text-3);
     font-size: 0.9rem;
@@ -671,6 +679,10 @@
     color: var(--z-text-1);
     font-family: var(--font-display);
     margin-bottom: 4px;
+}
+
+.activity-header h3 i {
+    color: var(--z-green);
 }
 
 .activity-header p {
@@ -817,6 +829,10 @@
     font-weight: 600;
     color: var(--z-text-1);
     font-family: var(--font-display);
+}
+
+.chart-header h3 i {
+    color: var(--z-green);
 }
 
 .chart-container {
@@ -2026,6 +2042,21 @@
     padding: 24px;
 }
 
+/* Recent Trade Preview rows (Overview) */
+.recent-trade-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.recent-trade-row:last-child { border-bottom: none; }
+.rt-symbol { min-width: 70px; font-size: 0.82rem; color: var(--z-text-1); }
+.rt-pnl { font-size: 0.8rem; font-family: 'JetBrains Mono', monospace; margin-left: auto; }
+.rt-time { white-space: nowrap; }
+.empty-state-inline { text-align: center; padding: 18px 0; color: var(--z-text-3); font-size: 0.85rem; }
+.empty-state-inline i { margin-right: 6px; }
+
 .trades-header {
     display: flex;
     justify-content: space-between;
@@ -2581,6 +2612,11 @@
     color: var(--z-cyan);
 }
 
+.runs-summary-icon.danger {
+    background: rgba(255,71,87,0.12);
+    color: #ff4757;
+}
+
 .history-summary-icon.profit {
     background: rgba(0,255,135,0.12);
     color: var(--z-green);
@@ -2905,6 +2941,10 @@
     gap: 14px;
     margin-bottom: 20px;
 }
+.mc-header h3 i {
+    color: var(--z-green);
+}
+
 .mc-header h3 {
     font-size: 1.1rem;
     font-weight: 600;
@@ -3077,7 +3117,7 @@
     padding: 14px;
     text-align: center;
 }
-.mc-stat-icon { font-size: 1.2rem; margin-bottom: 4px; }
+.mc-stat-icon { font-size: 1.2rem; margin-bottom: 4px; color: var(--z-green); }
 .mc-stat-label {
     font-size: 0.7rem;
     font-weight: 600;

@@ -64,7 +64,7 @@
         <!-- Top Bar -->
         <div class="top-bar glass-card">
             <div class="top-bar-left">
-                <button class="mobile-nav-toggle" id="mobileNavToggle" style="display: none; background: none; border: none; color: #00ff87; font-size: 20px; cursor: pointer; padding: 8px;"><i class="fas fa-bars"></i></button>
+                <button class="mobile-nav-toggle" id="mobileNavToggle" style="display: none; background: none; border: none; color: var(--z-green); font-size: 20px; cursor: pointer; padding: 8px;"><i class="fas fa-bars"></i></button>
                 <h1>Dashboard</h1>
                 <div class="bot-status">
                     <span class="status-indicator status-inactive" id="botIndicator"></span>
@@ -308,7 +308,7 @@
                         <div><div class="runs-summary-value" id="liveOpenedCount">0</div><div class="runs-summary-label">Opened</div></div>
                     </div>
                     <div class="runs-summary-card glass-card">
-                        <div class="runs-summary-icon running"><i class="fas fa-circle-xmark"></i></div>
+                        <div class="runs-summary-icon danger"><i class="fas fa-circle-xmark"></i></div>
                         <div><div class="runs-summary-value" id="liveFailedCount">0</div><div class="runs-summary-label">Failed</div></div>
                     </div>
                     <div class="runs-summary-card glass-card">
@@ -366,20 +366,12 @@
                         <p>Recent signal triggers and position management</p>
                     </div>
                 </div>
-                <div class="timeline">
-                    <div class="timeline-item">
-                        <div class="timeline-marker success"></div>
-                        <div class="timeline-content">
-                            <div class="timeline-time">Just now</div>
-                            <div class="timeline-title">Strategy Monitoring Active</div>
-                            <div class="timeline-desc">Scanning markets for entry signals...</div>
-                        </div>
-                    </div>
+                <div class="timeline" id="tradingTimeline">
                     <div class="timeline-item">
                         <div class="timeline-marker"></div>
                         <div class="timeline-content">
                             <div class="timeline-time">—</div>
-                            <div class="timeline-title">No Recent Activity</div>
+                            <div class="timeline-title">Waiting for Bot</div>
                             <div class="timeline-desc">Start the bot to see live trading events</div>
                         </div>
                     </div>
@@ -435,10 +427,10 @@
                     <h3><i class="fas fa-heartbeat"></i> System Health</h3>
                     <div class="health-grid">
                         <div class="health-item">
-                            <div class="health-icon success"><i class="fas fa-check-circle"></i></div>
+                            <div class="health-icon" id="apiHealthIcon"><i class="fas fa-check-circle"></i></div>
                             <div class="health-info">
                                 <div class="health-label">API Connection</div>
-                                <div class="health-status">Online</div>
+                                <div class="health-status" id="apiHealthStatus">Checking...</div>
                             </div>
                         </div>
                         <div class="health-item">
@@ -449,17 +441,17 @@
                             </div>
                         </div>
                         <div class="health-item">
-                            <div class="health-icon success"><i class="fas fa-database"></i></div>
+                            <div class="health-icon" id="dbHealthIcon"><i class="fas fa-database"></i></div>
                             <div class="health-info">
                                 <div class="health-label">Data Storage</div>
-                                <div class="health-status">Healthy</div>
+                                <div class="health-status" id="dbHealthStatus">Checking...</div>
                             </div>
                         </div>
                         <div class="health-item">
-                            <div class="health-icon success"><i class="fas fa-shield-alt"></i></div>
+                            <div class="health-icon" id="riskHealthIcon"><i class="fas fa-shield-alt"></i></div>
                             <div class="health-info">
                                 <div class="health-label">Risk Manager</div>
-                                <div class="health-status">Active</div>
+                                <div class="health-status" id="riskHealthStatus">Checking...</div>
                             </div>
                         </div>
                     </div>
@@ -472,16 +464,16 @@
                         <div class="risk-meter">
                             <div class="risk-label">Daily Risk Exposure</div>
                             <div class="risk-bar">
-                                <div class="risk-fill" style="width: 0%;"></div>
+                                <div class="risk-fill" id="riskDailyFill" style="width: 0%;"></div>
                             </div>
-                            <div class="risk-value">0% of max</div>
+                            <div class="risk-value" id="riskDailyValue">No data</div>
                         </div>
                         <div class="risk-meter">
                             <div class="risk-label">Open Position Risk</div>
                             <div class="risk-bar">
-                                <div class="risk-fill" style="width: 0%;"></div>
+                                <div class="risk-fill" id="riskPositionFill" style="width: 0%;"></div>
                             </div>
-                            <div class="risk-value">No open positions</div>
+                            <div class="risk-value" id="riskPositionValue">No open positions</div>
                         </div>
                         <div class="risk-info">
                             <i class="fas fa-info-circle"></i>
@@ -509,40 +501,40 @@
             <!-- Market Overview -->
             <div class="market-overview glass-card reveal-up">
                 <div class="card-glow"></div>
-                <h3><i class="fas fa-globe"></i> Market Overview</h3>
-                <div class="market-grid">
+                <h3><i class="fas fa-globe"></i> Monitored Symbols</h3>
+                <div class="market-grid" id="marketOverviewGrid">
                     <div class="market-pair">
                         <div class="pair-info">
                             <span class="pair-name">EUR/USD</span>
-                            <span class="pair-price">1.0842</span>
+                            <span class="pair-price" id="mktEURUSD">—</span>
                         </div>
-                        <span class="pair-change positive">+0.12%</span>
+                        <span class="pair-change" id="mktEURUSDchg">—</span>
                     </div>
                     <div class="market-pair">
                         <div class="pair-info">
                             <span class="pair-name">GBP/USD</span>
-                            <span class="pair-price">1.2634</span>
+                            <span class="pair-price" id="mktGBPUSD">—</span>
                         </div>
-                        <span class="pair-change positive">+0.08%</span>
+                        <span class="pair-change" id="mktGBPUSDchg">—</span>
                     </div>
                     <div class="market-pair">
                         <div class="pair-info">
                             <span class="pair-name">USD/JPY</span>
-                            <span class="pair-price">149.87</span>
+                            <span class="pair-price" id="mktUSDJPY">—</span>
                         </div>
-                        <span class="pair-change negative">-0.15%</span>
+                        <span class="pair-change" id="mktUSDJPYchg">—</span>
                     </div>
                     <div class="market-pair">
                         <div class="pair-info">
                             <span class="pair-name">XAU/USD</span>
-                            <span class="pair-price">2,048</span>
+                            <span class="pair-price" id="mktXAUUSD">—</span>
                         </div>
-                        <span class="pair-change positive">+0.34%</span>
+                        <span class="pair-change" id="mktXAUUSDchg">—</span>
                     </div>
                 </div>
                 <div class="market-note">
-                    <i class="fas fa-clock"></i>
-                    <span>Market data refreshes every 5 seconds</span>
+                    <i class="fas fa-info-circle"></i>
+                    <span>Prices update when the bot is connected and pushing data</span>
                 </div>
             </div>
         </section>
@@ -1120,7 +1112,7 @@
             <p style="color:var(--z-muted);font-size:0.82rem;margin-bottom:16px;">Paste these into your <strong>Zenith EA settings</strong> in MT5 (Inputs tab) to connect the bot to this dashboard.</p>
 
             <div class="form-group" style="margin-bottom:14px;">
-                <label style="font-size:0.78rem;"><i class="fas fa-globe" style="color:var(--z-green);margin-right:5px;"></i>Dashboard URL <span style="color:var(--z-muted);font-size:0.7rem;"> &rarr; DashboardURL in EA</span></label>
+                <label style="font-size:0.78rem;"><i class="fas fa-globe" style="color:var(--z-green);margin-right:6px;"></i>Dashboard URL <span style="color:var(--z-muted);font-size:0.7rem;"> &rarr; DashboardURL in EA</span></label>
                 <div style="display:flex;gap:6px;">
                     <input id="credsDashUrl" type="text" class="text-input" readonly style="flex:1;font-family:monospace;font-size:0.82rem;" />
                     <button class="btn btn-outline btn-sm" id="credsCopyUrlBtn" title="Copy"><i class="fas fa-copy"></i></button>
@@ -1128,7 +1120,7 @@
             </div>
 
             <div class="form-group" style="margin-bottom:14px;">
-                <label style="font-size:0.78rem;"><i class="fas fa-key" style="color:var(--z-green);margin-right:5px;"></i>API Key <span style="color:var(--z-muted);font-size:0.7rem;"> &rarr; DashboardAPIKey in EA</span></label>
+                <label style="font-size:0.78rem;"><i class="fas fa-key" style="color:var(--z-green);margin-right:6px;"></i>API Key <span style="color:var(--z-muted);font-size:0.7rem;"> &rarr; DashboardAPIKey in EA</span></label>
                 <div style="display:flex;gap:6px;">
                     <input id="credsApiKey" type="text" class="text-input" readonly style="flex:1;font-family:monospace;font-size:0.82rem;" placeholder="Generating..." />
                     <button class="btn btn-outline btn-sm" id="credsCopyKeyBtn" title="Copy"><i class="fas fa-copy"></i></button>
