@@ -810,24 +810,44 @@ def in_session_kill_zone(hour: int) -> bool:
            (SESSION_NY_START <= hour <= SESSION_NY_END)
 
 
+def _is_rejection_candle_live(o, h, l, c, direction):
+    """Check for bullish (1) or bearish (-1) rejection candle — matches backtest engine."""
+    rng = h - l
+    if rng <= 0:
+        return False
+    body = abs(c - o)
+    if direction == 1:  # bullish
+        lower_wick = min(o, c) - l
+        if c > o and (c - l) / rng >= 0.55:
+            return True
+        if lower_wick / rng >= 0.40:
+            return True
+        if c > o and body / rng >= 0.60:
+            return True
+    else:               # bearish
+        upper_wick = h - max(o, c)
+        if c < o and (h - c) / rng >= 0.55:
+            return True
+        if upper_wick / rng >= 0.40:
+            return True
+        if c < o and body / rng >= 0.60:
+            return True
+    return False
+
+
 def generate_signal(df: pd.DataFrame, params: dict, symbol: str, sym_info: dict) -> dict | None:
-    """Generate ICT / SMC trading signal with confluence scoring.
+    """Generate ICT / SMC trading signal — SYNCED with backtest engine.
 
-    HARD requirements (all must be true):
-      • EMA trend alignment (EMA 9 > EMA 21 for BUY, vice-versa)
-      • ADX ≥ threshold (skip consolidation)
-      • Valid Order Block zone from a BOS event
-      • Price pulls back into the OB zone
-      • Confirmation candle (close in trade direction)
+    Entry types (identical to backtest_improved.py):
+      1. Order Block retest  (demand/supply after BOS, rejection candle)
+      2. Fair Value Gap fill (imbalance zone re-entry, directional close)
+      3. Liquidity sweep     (stop-hunt reversal, rejection + reclaim)
 
-    CONFLUENCE SCORING (soft — need total ≥ MIN_CONFLUENCE):
-      +1  Displacement BOS (candle body ≥ 150 % of avg last 10)
-      +1  FVG present in the impulse
-      +1  Liquidity sweep before the move
-      +1  In session kill zone (London 07-10 / NY 13-16)
-      +1  Premium/Discount alignment
-      +1  Rejection wick on entry candle
-      +1  Strong OB candle (body > avg)
+    Filters:
+      • Market structure (struct >= 0 for buy, struct <= 0 for sell)
+      • ADX threshold (from best_settings.json)
+      • Session killzones (London 07-11, NY 13-17, US 14-20, crypto 24/7)
+      • Confluence gate >= 1 (EMA trend, zone, RSI non-extreme, strong ADX)
     """
     set_state(BotState.SCANNING)
 
@@ -857,10 +877,10 @@ def generate_signal(df: pd.DataFrame, params: dict, symbol: str, sym_info: dict)
     if n < max(slow, 60):
         return None
 
-    closes = df['Close'].to_numpy().astype(float)
-    opens  = df['Open'].to_numpy().astype(float)
-    highs  = df['High'].to_numpy().astype(float)
-    lows   = df['Low'].to_numpy().astype(float)
+    C  = df['Close'].to_numpy().astype(float)
+    O  = df['Open'].to_numpy().astype(float)
+    H  = df['High'].to_numpy().astype(float)
+    L  = df['Low'].to_numpy().astype(float)
     ema_f_arr = df['EMA_Fast'].to_numpy().astype(float)
     ema_s_arr = df['EMA_Slow'].to_numpy().astype(float)
     adx_arr   = df['ADX'].to_numpy().astype(float)
@@ -869,142 +889,119 @@ def generate_signal(df: pd.DataFrame, params: dict, symbol: str, sym_info: dict)
     times     = pd.to_datetime(df['Time'])
     hours     = times.dt.hour.to_numpy()
 
-    # Pre-compute helpers
-    swing_highs, swing_lows = _find_swing_points(highs, lows, SWING_LOOKBACK)
-    bodies = np.abs(closes - opens)
+    # ── Swing detection (matching backtest: left=5, right=3) ──
+    SL_LEFT = 5; SR_RIGHT = 3
+    sh_list = []   # (bar, price) confirmed swing highs
+    sl_list = []   # (bar, price) confirmed swing lows
+    for j in range(SL_LEFT, n - SR_RIGHT):
+        is_sh = True
+        for k in range(1, SL_LEFT + 1):
+            if H[j - k] > H[j]: is_sh = False; break
+        if is_sh:
+            for k in range(1, SR_RIGHT + 1):
+                if H[j + k] >= H[j]: is_sh = False; break
+        if is_sh:
+            sh_list.append((j, float(H[j])))
 
-    # Avg body of last 10 candles (per documentation: 150 % displacement)
-    avg_body_10 = np.zeros(n)
-    for j in range(10, n):
-        avg_body_10[j] = np.mean(bodies[j - 10:j])
+        is_sl = True
+        for k in range(1, SL_LEFT + 1):
+            if L[j - k] < L[j]: is_sl = False; break
+        if is_sl:
+            for k in range(1, SR_RIGHT + 1):
+                if L[j + k] <= L[j]: is_sl = False; break
+        if is_sl:
+            sl_list.append((j, float(L[j])))
 
-    # Avg body of last 20 for OB strength
-    avg_body_20 = np.zeros(n)
-    for j in range(20, n):
-        avg_body_20[j] = np.mean(bodies[j - 20:j])
+    # Keep recent swings
+    sh_list = sh_list[-25:]
+    sl_list = sl_list[-25:]
+
+    # ── Market structure (same as backtest) ──
+    struct = 0
+    if len(sh_list) >= 2 and len(sl_list) >= 2:
+        hh = sh_list[-1][1] > sh_list[-2][1]
+        hl = sl_list[-1][1] > sl_list[-2][1]
+        lh = sh_list[-1][1] < sh_list[-2][1]
+        ll = sl_list[-1][1] < sl_list[-2][1]
+        if hh and hl: struct = 1
+        elif lh and ll: struct = -1
 
     set_state(BotState.ZONING)
 
-    # ── Scan for BOS events and build OB zones (last ~100 bars) ──
-    bull_obs = []  # {hi, lo, bar, score, strong_ob}
-    bear_obs = []
-    start = max(slow, 2 * SWING_LOOKBACK + 5, 42)
-    scan_from = max(start, n - 120)  # Only scan recent bars for live signals
+    # ── Detect BOS → create OB zones (scan recent ~120 bars) ──
+    OB_LOOK = 15; MAX_OB = 80; MAX_FVG = 50
+    start_idx = max(slow, SL_LEFT + SR_RIGHT + 20, 60)
+    scan_from = max(start_idx, n - 120)
+
+    obs = []   # {d: 1/-1, lo, hi, b, bb, ok}
+    fvgs = []  # {d: 1/-1, lo, hi, b}
 
     for i in range(scan_from, n):
-        if not np.isfinite(adx_arr[i]) or adx_arr[i] < adx_th:
+        p = i - 1
+        if p < start_idx:
             continue
 
-        bullish_trend = ema_f_arr[i] > ema_s_arr[i]
-        bearish_trend = ema_f_arr[i] < ema_s_arr[i]
-
-        # Find most recent swing high / swing low
-        recent_sh = np.nan
-        recent_sl_val = np.nan
-        for k in range(i - SWING_LOOKBACK - 1, max(start - 1, SWING_LOOKBACK) - 1, -1):
-            if np.isnan(recent_sh) and not np.isnan(swing_highs[k]):
-                recent_sh = swing_highs[k]
-            if np.isnan(recent_sl_val) and not np.isnan(swing_lows[k]):
-                recent_sl_val = swing_lows[k]
-            if not np.isnan(recent_sh) and not np.isnan(recent_sl_val):
-                break
-
-        # ── Bullish BOS ──
-        if bullish_trend and not np.isnan(recent_sh):
-            for k in range(max(start, i - SWING_LOOKBACK), i):
-                if closes[k] > recent_sh:
-                    # Displacement: BOS candle body ≥ 150 % of avg last 10
-                    bos_disp = bodies[k] > avg_body_10[k] * 1.5 if avg_body_10[k] > 0 else False
-
-                    # Find OB: last bearish candle before the impulse
-                    ob_hi, ob_lo, ob_strong = np.nan, np.nan, False
-                    for ob_idx in range(k, max(k - OB_SCAN, 0), -1):
-                        if closes[ob_idx] < opens[ob_idx]:
-                            ob_hi = highs[ob_idx]
-                            ob_lo = min(opens[ob_idx], closes[ob_idx])
-                            ob_strong = bodies[ob_idx] > avg_body_20[ob_idx] * 0.7 if avg_body_20[ob_idx] > 0 else False
-                            break
-                    if np.isnan(ob_hi):
+        # Detect bullish BOS (close above last swing high)
+        if sh_list:
+            lsh = sh_list[-1][1]
+            if C[p] > lsh and (p < 2 or C[p-1] <= lsh):
+                for j in range(p-1, max(p - OB_LOOK, start_idx), -1):
+                    if C[j] < O[j] and (H[j] - L[j]) > 0:
+                        obs.append({'d': 1, 'lo': float(L[j]), 'hi': float(H[j]),
+                                    'b': j, 'bb': p, 'ok': True})
+                        try:
+                            insert_order_block(symbol=symbol, price_high=float(H[j]),
+                                               price_low=float(L[j]), direction='BULL')
+                        except Exception:
+                            pass
                         break
 
-                    score = 0
-                    if bos_disp:
-                        score += 1
-                    # FVG check
-                    for f in range(max(start, k - 8), k + 1):
-                        if f >= 2 and lows[f] > highs[f - 2]:
-                            score += 1
-                            break
-                    # Liquidity sweep
-                    if k >= 2 and lows[k - 1] < lows[k - 2] and closes[k - 1] > lows[k - 2]:
-                        score += 1
-                    if ob_strong:
-                        score += 1
-
-                    bull_obs.append({'hi': ob_hi, 'lo': ob_lo, 'bar': i, 'score': score})
-                    if len(bull_obs) > 3:
-                        bull_obs.pop(0)
-
-                    # Store OB in database
-                    try:
-                        insert_order_block(symbol=symbol, price_high=ob_hi, price_low=ob_lo, direction='BULL')
-                    except Exception:
-                        pass
-                    break
-
-        # ── Bearish BOS ──
-        if bearish_trend and not np.isnan(recent_sl_val):
-            for k in range(max(start, i - SWING_LOOKBACK), i):
-                if closes[k] < recent_sl_val:
-                    bos_disp = bodies[k] > avg_body_10[k] * 1.5 if avg_body_10[k] > 0 else False
-
-                    ob_hi, ob_lo, ob_strong = np.nan, np.nan, False
-                    for ob_idx in range(k, max(k - OB_SCAN, 0), -1):
-                        if closes[ob_idx] > opens[ob_idx]:
-                            ob_lo = lows[ob_idx]
-                            ob_hi = max(opens[ob_idx], closes[ob_idx])
-                            ob_strong = bodies[ob_idx] > avg_body_20[ob_idx] * 0.7 if avg_body_20[ob_idx] > 0 else False
-                            break
-                    if np.isnan(ob_lo):
+        # Detect bearish BOS (close below last swing low)
+        if sl_list:
+            lsl = sl_list[-1][1]
+            if C[p] < lsl and (p < 2 or C[p-1] >= lsl):
+                for j in range(p-1, max(p - OB_LOOK, start_idx), -1):
+                    if C[j] > O[j] and (H[j] - L[j]) > 0:
+                        obs.append({'d': -1, 'lo': float(L[j]), 'hi': float(H[j]),
+                                    'b': j, 'bb': p, 'ok': True})
+                        try:
+                            insert_order_block(symbol=symbol, price_high=float(H[j]),
+                                               price_low=float(L[j]), direction='BEAR')
+                        except Exception:
+                            pass
                         break
 
-                    score = 0
-                    if bos_disp:
-                        score += 1
-                    for f in range(max(start, k - 8), k + 1):
-                        if f >= 2 and highs[f] < lows[f - 2]:
-                            score += 1
-                            break
-                    if k >= 2 and highs[k - 1] > highs[k - 2] and closes[k - 1] < highs[k - 2]:
-                        score += 1
-                    if ob_strong:
-                        score += 1
+        # Detect FVGs (matching backtest: gap > ATR * 0.20, directional)
+        if p >= 2:
+            ap = max(atr_arr[p], 1e-10)
+            g_b = L[p] - H[p-2]
+            if g_b > ap * 0.20 and C[p] > C[p-2]:
+                fvgs.append({'d': 1, 'lo': float(H[p-2]), 'hi': float(L[p]), 'b': p})
+            g_s = L[p-2] - H[p]
+            if g_s > ap * 0.20 and C[p] < C[p-2]:
+                fvgs.append({'d': -1, 'lo': float(H[p]), 'hi': float(L[p-2]), 'b': p})
 
-                    bear_obs.append({'hi': ob_hi, 'lo': ob_lo, 'bar': i, 'score': score})
-                    if len(bear_obs) > 3:
-                        bear_obs.pop(0)
-
-                    try:
-                        insert_order_block(symbol=symbol, price_high=ob_hi, price_low=ob_lo, direction='BEAR')
-                    except Exception:
-                        pass
-                    break
-
-    # Expire old OB zones
-    bull_obs = [z for z in bull_obs if (n - 1 - z['bar']) <= BOS_VALIDITY]
-    bear_obs = [z for z in bear_obs if (n - 1 - z['bar']) <= BOS_VALIDITY]
+    # Expire old zones
+    latest = n - 1
+    obs  = [o for o in obs  if (latest - o['bb']) < MAX_OB and o['ok']]
+    fvgs = [f for f in fvgs if (latest - f['b']) < MAX_FVG]
+    for o in obs:
+        if o['d'] == 1  and C[latest-1] < o['lo'] - atr_arr[latest-1]*0.5: o['ok'] = False
+        if o['d'] == -1 and C[latest-1] > o['hi'] + atr_arr[latest-1]*0.5: o['ok'] = False
 
     set_state(BotState.MONITORING)
 
-    # ── Check pullback entry on the LATEST bar ──
-    i = n - 1
+    # ── Check entry on the LATEST confirmed bar (p = n-2) ──
+    p = n - 2   # signal bar (confirmed)
+    i = n - 1   # execution bar
+    if p < start_idx:
+        return None
+
     bar_time = df['Time'].iat[i]
-    hour = hours[i]
-    adx_val = adx_arr[i]
-    ema_f = ema_f_arr[i]
-    ema_s = ema_s_arr[i]
-    atr_val = atr_arr[i]
-    rsi_val = rsi_arr[i]
+    hour = hours[p]
+    adx_val = adx_arr[p]
+    atr_val = atr_arr[p]
+    rsi_val = rsi_arr[p]
 
     # Use LIVE bid/ask from MT5
     bid = sym_info['bid']
@@ -1012,130 +1009,137 @@ def generate_signal(df: pd.DataFrame, params: dict, symbol: str, sym_info: dict)
     spread_points = sym_info['spread']
     digits = sym_info['digits']
 
-    # Session kill zone filter
-    if not in_session_kill_zone(hour):
-        set_state(BotState.IDLE)
+    # ── Session kill zone filter (matching backtest) ──
+    is_crypto = symbol in ('BTCUSD',)
+    is_us = symbol in ('NAS100',)
+    if is_crypto:
+        pass  # 24/7
+    elif is_us:
+        if hour < 14 or hour > 20:
+            set_state(BotState.IDLE)
+            return None
+    else:
+        if not ((7 <= hour <= 11) or (13 <= hour <= 17)):
+            set_state(BotState.IDLE)
+            return None
+
+    # ADX filter (exact threshold, no buffer — matching backtest)
+    if not np.isfinite(adx_val) or adx_val < adx_th:
         return None
 
-    # ADX filter — require extra buffer over threshold to reduce chop entries
-    if not np.isfinite(adx_val) or adx_val < (adx_th + 2.0):
+    if atr_val <= 0:
         return None
 
-    # Spread filter — skip if spread is too large relative to ATR (cost too high)
+    # Spread filter — skip if spread is too large relative to ATR
     tick_size = max(float(sym_info.get('tick_size', 0.0)), 0.0)
     spread_price = spread_points * tick_size
     if atr_val > 0 and spread_price / atr_val > 0.16:
         return None
 
-    bullish_trend = ema_f > ema_s
-    bearish_trend = ema_f < ema_s
-    if not bullish_trend and not bearish_trend:
+    # ── Trend & Zone filters (matching backtest) ──
+    ema_f_p = ema_f_arr[p]
+    ema_s_p = ema_s_arr[p]
+    ema_bull = C[p] > ema_s_p and ema_f_p > ema_s_p
+    ema_bear = C[p] < ema_s_p and ema_f_p < ema_s_p
+
+    RANGE_BARS = 50
+    range_hi = float(np.max(H[max(0, p - RANGE_BARS):p + 1]))
+    range_lo = float(np.min(L[max(0, p - RANGE_BARS):p + 1]))
+    range_mid = (range_hi + range_lo) / 2.0
+    in_discount = C[p] < range_mid
+    in_premium  = C[p] > range_mid
+
+    # ── 3 ENTRY TYPES (matching backtest exactly) ──
+    sig = 0
+    entry_type = ''
+
+    # 1. Order Block retest (structure + rejection candle)
+    for ob in obs:
+        if not ob['ok']:
+            continue
+        if ob['d'] == 1 and struct >= 0:
+            if L[p] <= ob['hi'] and C[p] >= ob['lo']:
+                if _is_rejection_candle_live(O[p], H[p], L[p], C[p], 1):
+                    sig = 1; ob['ok'] = False; entry_type = 'OB'; break
+        elif ob['d'] == -1 and struct <= 0:
+            if H[p] >= ob['lo'] and C[p] <= ob['hi']:
+                if _is_rejection_candle_live(O[p], H[p], L[p], C[p], -1):
+                    sig = -1; ob['ok'] = False; entry_type = 'OB'; break
+
+    # 2. FVG fill (structure + directional close, no rejection needed)
+    if sig == 0:
+        for fi in range(len(fvgs)):
+            fv = fvgs[fi]
+            if fv['d'] == 1 and struct >= 0:
+                if L[p] <= fv['hi'] and C[p] > fv['lo'] and C[p] > O[p]:
+                    sig = 1; fvgs.pop(fi); entry_type = 'FVG'; break
+            elif fv['d'] == -1 and struct <= 0:
+                if H[p] >= fv['lo'] and C[p] < fv['hi'] and C[p] < O[p]:
+                    sig = -1; fvgs.pop(fi); entry_type = 'FVG'; break
+
+    # 3. Sweep reversal (rejection + reclaim of swing level)
+    if sig == 0 and sl_list and struct >= 0:
+        for _si, sv in sl_list[-3:]:
+            if L[p] < sv and C[p] > sv:
+                if _is_rejection_candle_live(O[p], H[p], L[p], C[p], 1):
+                    sig = 1; entry_type = 'Sweep'; break
+    if sig == 0 and sh_list and struct <= 0:
+        for _si, sv in sh_list[-3:]:
+            if H[p] > sv and C[p] < sv:
+                if _is_rejection_candle_live(O[p], H[p], L[p], C[p], -1):
+                    sig = -1; entry_type = 'Sweep'; break
+
+    if sig == 0:
         return None
 
-    # Avoid late entries into stretched moves (extreme RSI only)
-    if bullish_trend and rsi_val >= 85.0:
+    # ── Confluence gate (>= 1, matching backtest) ──
+    conf = 0
+    if (sig == 1 and ema_bull) or (sig == -1 and ema_bear):
+        conf += 1  # EMA trend aligned
+    if (sig == 1 and in_discount) or (sig == -1 and in_premium):
+        conf += 1  # correct zone
+    if 30 < rsi_val < 70:
+        conf += 1  # RSI not extreme
+    if adx_val >= adx_th + 5:
+        conf += 1  # strong trend
+    if conf < 1:
         return None
-    if bearish_trend and rsi_val <= 15.0:
+
+    # ── Build signal ──
+    if sig == 1:
+        entry = ask
+        stop = entry - (atr_mult * atr_val)
+        tp = entry + (atr_mult * atr_val * rr_ratio)
+    else:
+        entry = bid
+        stop = entry + (atr_mult * atr_val)
+        tp = entry - (atr_mult * atr_val * rr_ratio)
+
+    # Sanity check
+    stop_dist = abs(entry - stop)
+    if stop_dist < tick_size * 10 or stop_dist > atr_val * 6:
         return None
 
-    # Entry-level confluence helpers
-    range_lb = min(40, n - 1)
-    range_high = np.max(highs[i - range_lb:i]) if range_lb > 0 else highs[i]
-    range_low  = np.min(lows[i - range_lb:i]) if range_lb > 0 else lows[i]
-    range_mid  = (range_high + range_low) / 2.0
-    body_i = abs(closes[i] - opens[i])
-
-    signal_result = None
-
-    # ── BULLISH ENTRY ──
-    if bullish_trend:
-        for z_idx, z in enumerate(bull_obs):
-            if (i - z['bar']) < 1:
-                continue
-            touched = lows[i] <= z['hi'] and closes[i] >= z['lo']
-            bull_candle = closes[i] > opens[i]
-            if not (touched and bull_candle):
-                continue
-
-            entry_score = z['score']
-            if in_session_kill_zone(hour):
-                entry_score += 1
-            if closes[i] < range_mid:  # Discount zone
-                entry_score += 1
-            lower_wick = min(opens[i], closes[i]) - lows[i]
-            if body_i > 0 and lower_wick > body_i * 0.3:
-                entry_score += 1  # Rejection wick
-
-            if entry_score >= MIN_CONFLUENCE:
-                entry = ask
-                stop = entry - (atr_mult * atr_val)
-                tp = entry + (atr_mult * atr_val * rr_ratio)
-                signal_result = {
-                    'symbol': symbol,
-                    'broker_symbol': sym_info['broker_symbol'],
-                    'direction': 'BUY',
-                    'entry': round(entry, digits),
-                    'stop': round(stop, digits),
-                    'tp': round(tp, digits),
-                    'bid': bid, 'ask': ask,
-                    'spread': spread_points,
-                    'adx': round(adx_val, 2),
-                    'atr': round(atr_val, digits),
-                    'atr_mult': atr_mult,
-                    'ema_fast': round(ema_f, digits),
-                    'ema_slow': round(ema_s, digits),
-                    'timestamp': bar_time,
-                    'confluence_score': entry_score,
-                    'params': f"ICT EMA{fast}/{slow} ADX>{adx_th} ATR×{atr_mult} Score:{entry_score}",
-                }
-                # Mark OB as mitigated
-                bull_obs.pop(z_idx)
-                break
-
-    # ── BEARISH ENTRY ──
-    if bearish_trend and signal_result is None:
-        for z_idx, z in enumerate(bear_obs):
-            if (i - z['bar']) < 1:
-                continue
-            touched = highs[i] >= z['lo'] and closes[i] <= z['hi']
-            bear_candle = closes[i] < opens[i]
-            if not (touched and bear_candle):
-                continue
-
-            entry_score = z['score']
-            if in_session_kill_zone(hour):
-                entry_score += 1
-            if closes[i] > range_mid:  # Premium zone
-                entry_score += 1
-            upper_wick = highs[i] - max(opens[i], closes[i])
-            if body_i > 0 and upper_wick > body_i * 0.3:
-                entry_score += 1  # Rejection wick
-
-            if entry_score >= MIN_CONFLUENCE:
-                entry = bid
-                stop = entry + (atr_mult * atr_val)
-                tp = entry - (atr_mult * atr_val * rr_ratio)
-                signal_result = {
-                    'symbol': symbol,
-                    'broker_symbol': sym_info['broker_symbol'],
-                    'direction': 'SELL',
-                    'entry': round(entry, digits),
-                    'stop': round(stop, digits),
-                    'tp': round(tp, digits),
-                    'bid': bid, 'ask': ask,
-                    'spread': spread_points,
-                    'adx': round(adx_val, 2),
-                    'atr': round(atr_val, digits),
-                    'atr_mult': atr_mult,
-                    'ema_fast': round(ema_f, digits),
-                    'ema_slow': round(ema_s, digits),
-                    'timestamp': bar_time,
-                    'confluence_score': entry_score,
-                    'params': f"ICT EMA{fast}/{slow} ADX>{adx_th} ATR×{atr_mult} Score:{entry_score}",
-                }
-                bear_obs.pop(z_idx)
-                break
-
+    signal_result = {
+        'symbol': symbol,
+        'broker_symbol': sym_info['broker_symbol'],
+        'direction': 'BUY' if sig == 1 else 'SELL',
+        'entry': round(entry, digits),
+        'stop': round(stop, digits),
+        'tp': round(tp, digits),
+        'bid': bid, 'ask': ask,
+        'spread': spread_points,
+        'adx': round(adx_val, 2),
+        'atr': round(atr_val, digits),
+        'atr_mult': atr_mult,
+        'ema_fast': round(float(ema_f_p), digits),
+        'ema_slow': round(float(ema_s_p), digits),
+        'timestamp': bar_time,
+        'confluence_score': conf,
+        'entry_type': entry_type,
+        'structure': struct,
+        'params': f"ICT EMA{fast}/{slow} ADX>{adx_th} ATR×{atr_mult} RR={rr_ratio} {entry_type} conf={conf}",
+    }
     return signal_result
 
 
@@ -1940,10 +1944,10 @@ def scan_markets(cfg: dict, verbose: bool = False):
                         
                         result_emoji = "✅" if profit > 0 else "❌"
                         send_telegram_message(
-                            f"{result_emoji} <b>Trade Closed</b>\\n"
-                            f"{prev_pos['direction']} {symbol}\\n"
-                            f"Entry: {prev_pos['entry_price']}\\n"
-                            f"Exit: {exit_price}\\n"
+                            f"{result_emoji} <b>Trade Closed</b>\n"
+                            f"{prev_pos['direction']} {symbol}\n"
+                            f"Entry: {prev_pos['entry_price']}\n"
+                            f"Exit: {exit_price}\n"
                             f"Profit: ${profit:.2f}"
                         )
                         break

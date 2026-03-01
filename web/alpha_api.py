@@ -1452,8 +1452,8 @@ def _extract_metrics_from_payload(payload: dict) -> dict:
 def api_symbols():
     """Return all tradeable symbols with recommendation status."""
     cfg_path = BASE_DIR / "mt5_bot" / "runtime_config.json"
-    recommended = ["XAUUSD", "GBPUSD", "USDJPY", "BTCUSD", "GBPJPY"]
-    not_rec = ["EURUSD", "NAS100"]
+    recommended = ["XAUUSD", "GBPUSD", "USDJPY", "BTCUSD", "GBPJPY", "EURUSD", "NAS100"]
+    not_rec = []
     try:
         if cfg_path.exists():
             import json as _j

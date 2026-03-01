@@ -498,7 +498,7 @@ def run_backtest_no_lookahead(
             held += 1
             bh = H[i]; bl = L[i]
 
-            # ── Exit checks — clean SL/TP, no early trailing ──
+            # ── Exit checks — clean SL/TP ──
             ex = False; ep = C[i]; er = 'Time'
             if dirn == 1:
                 if bh >= tp_price:
@@ -582,42 +582,40 @@ def run_backtest_no_lookahead(
         in_discount = C[p] < range_mid           # buy zone
         in_premium  = C[p] > range_mid           # sell zone
 
-        # --- ICT/SMC: OB, FVG, or sweep entries with strict confluence ---
+        # --- ICT/SMC: OB, FVG, or sweep entries with confluence ---
         sig = 0
 
-        # Order Block retest (strict structure required)
+        # Order Block retest (structure required)
         for ob in obs:
             if not ob['ok']:
                 continue
-            if ob['d'] == 1 and struct == 1:
+            if ob['d'] == 1 and struct >= 0:
                 if L[p] <= ob['hi'] and C[p] >= ob['lo']:
                     if is_rejection_candle(O[p], H[p], L[p], C[p], 1):
                         sig = 1; ob['ok'] = False; break
-            elif ob['d'] == -1 and struct == -1:
+            elif ob['d'] == -1 and struct <= 0:
                 if H[p] >= ob['lo'] and C[p] <= ob['hi']:
                     if is_rejection_candle(O[p], H[p], L[p], C[p], -1):
                         sig = -1; ob['ok'] = False; break
 
-        # FVG fill (strict structure + rejection candle)
+        # FVG fill (structure + directional close)
         if sig == 0:
             for fi in range(len(fvgs)):
                 fv = fvgs[fi]
-                if fv['d'] == 1 and struct == 1:
+                if fv['d'] == 1 and struct >= 0:
                     if L[p] <= fv['hi'] and C[p] > fv['lo'] and C[p] > O[p]:
-                        if is_rejection_candle(O[p], H[p], L[p], C[p], 1):
-                            sig = 1; fvgs.pop(fi); break
-                elif fv['d'] == -1 and struct == -1:
+                        sig = 1; fvgs.pop(fi); break
+                elif fv['d'] == -1 and struct <= 0:
                     if H[p] >= fv['lo'] and C[p] < fv['hi'] and C[p] < O[p]:
-                        if is_rejection_candle(O[p], H[p], L[p], C[p], -1):
-                            sig = -1; fvgs.pop(fi); break
+                        sig = -1; fvgs.pop(fi); break
 
-        # Sweep reversal (strict: rejection + reclaim + structure)
-        if sig == 0 and r_sl and struct == 1:
+        # Sweep reversal (rejection + reclaim)
+        if sig == 0 and r_sl and struct >= 0:
             for _si, sv in r_sl[-3:]:
                 if L[p] < sv and C[p] > sv:
                     if is_rejection_candle(O[p], H[p], L[p], C[p], 1):
                         sig = 1; break
-        if sig == 0 and r_sh and struct == -1:
+        if sig == 0 and r_sh and struct <= 0:
             for _si, sv in r_sh[-3:]:
                 if H[p] > sv and C[p] < sv:
                     if is_rejection_candle(O[p], H[p], L[p], C[p], -1):
@@ -626,17 +624,17 @@ def run_backtest_no_lookahead(
         if sig == 0:
             continue
 
-        # ── Confluence gate — minimum 2 of 4 optional factors ──
+        # ── Confluence gate ──
         conf = 0
         if (sig == 1 and ema_bull) or (sig == -1 and ema_bear):
             conf += 1                            # EMA trend aligned
         if (sig == 1 and in_discount) or (sig == -1 and in_premium):
             conf += 1                            # correct zone
-        if (sig == 1 and 40 < RSI[p] < 70) or (sig == -1 and 30 < RSI[p] < 60):
-            conf += 1                            # RSI confirmation
+        if (sig == 1 and 30 < RSI[p] < 70) or (sig == -1 and 30 < RSI[p] < 70):
+            conf += 1                            # RSI not extreme
         if ADX[p] >= adx_min + 5:
             conf += 1                            # strong trend
-        if conf < 2:
+        if conf < 1:
             continue
 
         # ── Place trade ──

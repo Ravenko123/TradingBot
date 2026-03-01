@@ -501,6 +501,12 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
+            // Auth guard — redirect to login if not authenticated
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = 'login.html';
+                return;
+            }
             const params = new URLSearchParams(window.location.search);
             const resetToken = params.get('reset_token');
             if (resetToken) {

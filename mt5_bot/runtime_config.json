@@ -4,12 +4,12 @@
   "max_margin_usage_pct": 20.0,
   "daily_drawdown_adjustment_usd": 0.0,
   "enabled_symbols": [
-    "XAUUSD",
-    "GBPUSD",
-    "USDJPY",
     "BTCUSD",
-    "GBPJPY"
-  ],
-  "recommended_symbols": ["XAUUSD", "GBPUSD", "USDJPY", "BTCUSD", "GBPJPY"],
-  "not_recommended_symbols": ["EURUSD", "NAS100"]
+    "EURUSD",
+    "GBPJPY",
+    "GBPUSD",
+    "NAS100",
+    "USDJPY",
+    "XAUUSD"
+  ]
 }

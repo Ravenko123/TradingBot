@@ -330,7 +330,10 @@ async function loadMetrics() {
     if ($('maxDrawdown')) $('maxDrawdown').textContent = `${Number(m.max_drawdown_pct ?? m.max_drawdown ?? 0).toFixed(2)}`;
     if ($('avgWin')) $('avgWin').textContent = `+$${Number(m.average_win || 0).toFixed(2)}`;
     if ($('avgLoss')) $('avgLoss').textContent = `-$${Number(m.average_loss || 0).toFixed(2)}`;
-    if ($('largestWin')) $('largestWin').textContent = '+$0.00';
+    if ($('largestWin')) $('largestWin').textContent = `+$${Number(m.largest_win || m.best_trade || 0).toFixed(2)}`;
+    const wins = Number(m.wins || 0);
+    const losses = Number(m.losses || (m.total_trades || 0) - wins);
+    if ($('winLossRatio')) $('winLossRatio').textContent = losses > 0 ? (wins / losses).toFixed(2) : wins > 0 ? '∞' : '0.00';
     refreshStatCardColors();
 }
 
@@ -347,6 +350,17 @@ async function loadTrades() {
         <td class="${t.pnl >= 0 ? 'positive' : 'negative'}">${t.pnl.toFixed(2)}</td>
         <td>${t.pnl >= 0 ? '+' : ''}${t.pnl.toFixed(2)}</td>
     </tr>`).join('');
+
+    // Populate history summary stats
+    const total = trades.length;
+    const wins = trades.filter(t => t.pnl > 0).length;
+    const wr = total > 0 ? (wins / total * 100).toFixed(1) : '0.0';
+    const totalPnl = trades.reduce((s, t) => s + (t.pnl || 0), 0);
+    const avgReturn = total > 0 ? (totalPnl / total).toFixed(2) : '0.00';
+    if ($('histTotalTrades')) $('histTotalTrades').textContent = total;
+    if ($('histWinRate')) $('histWinRate').textContent = wr + '%';
+    if ($('histTotalPnl')) $('histTotalPnl').textContent = (totalPnl >= 0 ? '+' : '') + '$' + totalPnl.toFixed(2);
+    if ($('histAvgReturn')) $('histAvgReturn').textContent = (avgReturn >= 0 ? '+' : '') + '$' + avgReturn;
 }
 
 async function loadEquity() {
