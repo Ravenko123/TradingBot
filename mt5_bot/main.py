@@ -155,11 +155,11 @@ SYMBOLS = ['EURUSD', 'GBPUSD', 'USDJPY', 'XAUUSD', 'GBPJPY', 'BTCUSD', 'NAS100']
 BROKER_SUFFIX = {'EURUSD': '+', 'GBPUSD': '+', 'USDJPY': '+', 'GBPJPY': '+', 'XAUUSD': '+'}
 
 # Strategy constants (same as backtested)
-# Session kill zones: London 07-10 UTC, New York 13-16 UTC
+# Session kill zones: London 07-11 UTC, New York 13-17 UTC
 SESSION_LONDON_START = 7
-SESSION_LONDON_END   = 10
+SESSION_LONDON_END   = 11
 SESSION_NY_START     = 13
-SESSION_NY_END       = 16
+SESSION_NY_END       = 17
 ATR_PERIOD = 14
 ADX_PERIOD = 14
 ADX_THRESHOLD = 25       # Doc: ADX < 25 = consolidation → skip

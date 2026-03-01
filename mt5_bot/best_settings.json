@@ -1,48 +1,48 @@
 {
-  "generated_at": "2026-03-01T16:45:00Z",
-  "source": "param_sweep_m15_verified",
+  "generated_at": "2026-03-01T18:30:00Z",
+  "source": "param_sweep_v2 (ICT/SMC v2 improved)",
   "instruments": {
     "USDJPY": {
-      "EMA": 50,
-      "ADX": 18.0,
-      "SL_Mult": 2.0,
-      "RR": 1.5
-    },
-    "XAUUSD": {
-      "EMA": 50,
-      "ADX": 20.0,
-      "SL_Mult": 1.0,
+      "EMA": 40,
+      "ADX": 16.0,
+      "SL_Mult": 2.5,
       "RR": 2.5
     },
-    "NAS100": {
-      "EMA": 50,
+    "XAUUSD": {
+      "EMA": 30,
       "ADX": 18.0,
-      "SL_Mult": 1.2,
+      "SL_Mult": 2.5,
+      "RR": 3.0
+    },
+    "NAS100": {
+      "EMA": 30,
+      "ADX": 16.0,
+      "SL_Mult": 1.0,
       "RR": 1.5
     },
     "EURUSD": {
-      "EMA": 50,
-      "ADX": 18.0,
-      "SL_Mult": 1.5,
-      "RR": 2.0
+      "EMA": 80,
+      "ADX": 24.0,
+      "SL_Mult": 2.5,
+      "RR": 1.5
     },
     "GBPUSD": {
-      "EMA": 50,
-      "ADX": 18.0,
-      "SL_Mult": 1.0,
-      "RR": 1.5
+      "EMA": 40,
+      "ADX": 30.0,
+      "SL_Mult": 3.0,
+      "RR": 4.0
     },
     "GBPJPY": {
-      "EMA": 50,
-      "ADX": 18.0,
-      "SL_Mult": 2.0,
-      "RR": 1.5
+      "EMA": 30,
+      "ADX": 16.0,
+      "SL_Mult": 1.5,
+      "RR": 3.0
     },
     "BTCUSD": {
-      "EMA": 60,
-      "ADX": 18.0,
-      "SL_Mult": 1.8,
-      "RR": 2.0
+      "EMA": 30,
+      "ADX": 16.0,
+      "SL_Mult": 2.5,
+      "RR": 1.5
     }
   }
 }

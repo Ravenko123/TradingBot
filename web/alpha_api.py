@@ -1447,6 +1447,34 @@ def _extract_metrics_from_payload(payload: dict) -> dict:
 
 # backtests
 
+
+@app.route("/api/symbols", methods=["GET"])
+def api_symbols():
+    """Return all tradeable symbols with recommendation status."""
+    cfg_path = BASE_DIR / "mt5_bot" / "runtime_config.json"
+    recommended = ["XAUUSD", "GBPUSD", "USDJPY", "BTCUSD", "GBPJPY"]
+    not_rec = ["EURUSD", "NAS100"]
+    try:
+        if cfg_path.exists():
+            import json as _j
+            cfg = _j.loads(cfg_path.read_text())
+            recommended = cfg.get("recommended_symbols", recommended)
+            not_rec = cfg.get("not_recommended_symbols", not_rec)
+    except Exception:
+        pass
+    all_syms = sorted(set(recommended + not_rec))
+    symbols = []
+    for s in all_syms:
+        symbols.append({
+            "symbol": s,
+            "recommended": s in recommended,
+            "label": f"{s} {'*' if s in recommended else ''}".strip()
+        })
+    # Recommended first
+    symbols.sort(key=lambda x: (not x["recommended"], x["symbol"]))
+    return json_response({"symbols": symbols})
+
+
 @app.route("/api/backtest/save", methods=["POST"])
 @require_auth
 def backtest_save():

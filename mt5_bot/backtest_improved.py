@@ -552,14 +552,15 @@ def run_backtest_no_lookahead(
         if atr_p <= 0 or ADX[p] < adx_min:
             continue
 
-        # Session filter
+        # Session filter — ICT Killzones
         h = hours[p]
         if is_crypto:
-            pass
+            pass                                 # 24/7
         elif is_us:
-            if h < 14 or h > 20: continue
+            if h < 14 or h > 20: continue        # US equity session
         else:
-            if not (7 <= h <= 17): continue
+            # London killzone (07-11) + New York killzone (13-17)
+            if not ((7 <= h <= 11) or (13 <= h <= 17)): continue
 
         # Spacing
         if (i - last_eidx) < 6:
@@ -571,40 +572,71 @@ def run_backtest_no_lookahead(
         if td and dtc.get(td, 0) >= md:
             continue
 
-        # --- ICT/SMC: OB, FVG, or sweep entries independently ---
+        # ── Trend & Zone filters (core ICT concepts) ──
+        ema_bull = C[p] > EMA[p] and EMAF[p] > EMA[p]
+        ema_bear = C[p] < EMA[p] and EMAF[p] < EMA[p]
+
+        range_hi = float(np.max(H[max(0, p - RANGE_BARS):p + 1]))
+        range_lo = float(np.min(L[max(0, p - RANGE_BARS):p + 1]))
+        range_mid = (range_hi + range_lo) / 2.0
+        in_discount = C[p] < range_mid           # buy zone
+        in_premium  = C[p] > range_mid           # sell zone
+
+        # --- ICT/SMC: OB, FVG, or sweep entries with strict confluence ---
         sig = 0
-        # Order Block retest
+
+        # Order Block retest (strict structure required)
         for ob in obs:
             if not ob['ok']:
                 continue
-            if ob['d'] == 1 and struct >= 0:
+            if ob['d'] == 1 and struct == 1:
                 if L[p] <= ob['hi'] and C[p] >= ob['lo']:
                     if is_rejection_candle(O[p], H[p], L[p], C[p], 1):
                         sig = 1; ob['ok'] = False; break
-            elif ob['d'] == -1 and struct <= 0:
+            elif ob['d'] == -1 and struct == -1:
                 if H[p] >= ob['lo'] and C[p] <= ob['hi']:
                     if is_rejection_candle(O[p], H[p], L[p], C[p], -1):
                         sig = -1; ob['ok'] = False; break
-        # FVG fill
+
+        # FVG fill (strict structure + rejection candle)
         if sig == 0:
             for fi in range(len(fvgs)):
                 fv = fvgs[fi]
-                if fv['d'] == 1 and struct >= 0:
+                if fv['d'] == 1 and struct == 1:
                     if L[p] <= fv['hi'] and C[p] > fv['lo'] and C[p] > O[p]:
-                        sig = 1; fvgs.pop(fi); break
-                elif fv['d'] == -1 and struct <= 0:
+                        if is_rejection_candle(O[p], H[p], L[p], C[p], 1):
+                            sig = 1; fvgs.pop(fi); break
+                elif fv['d'] == -1 and struct == -1:
                     if H[p] >= fv['lo'] and C[p] < fv['hi'] and C[p] < O[p]:
-                        sig = -1; fvgs.pop(fi); break
-        # Sweep reversal
-        if sig == 0 and r_sl:
-            for si, sv in r_sl[-4:]:
-                if L[p] < sv and (C[p] > L[p] + (H[p]-L[p])*0.5):
-                    sig = 1; break
-        if sig == 0 and r_sh:
-            for si, sv in r_sh[-4:]:
-                if H[p] > sv and (C[p] < H[p] - (H[p]-L[p])*0.5):
-                    sig = -1; break
+                        if is_rejection_candle(O[p], H[p], L[p], C[p], -1):
+                            sig = -1; fvgs.pop(fi); break
+
+        # Sweep reversal (strict: rejection + reclaim + structure)
+        if sig == 0 and r_sl and struct == 1:
+            for _si, sv in r_sl[-3:]:
+                if L[p] < sv and C[p] > sv:
+                    if is_rejection_candle(O[p], H[p], L[p], C[p], 1):
+                        sig = 1; break
+        if sig == 0 and r_sh and struct == -1:
+            for _si, sv in r_sh[-3:]:
+                if H[p] > sv and C[p] < sv:
+                    if is_rejection_candle(O[p], H[p], L[p], C[p], -1):
+                        sig = -1; break
+
         if sig == 0:
+            continue
+
+        # ── Confluence gate — minimum 2 of 4 optional factors ──
+        conf = 0
+        if (sig == 1 and ema_bull) or (sig == -1 and ema_bear):
+            conf += 1                            # EMA trend aligned
+        if (sig == 1 and in_discount) or (sig == -1 and in_premium):
+            conf += 1                            # correct zone
+        if (sig == 1 and 40 < RSI[p] < 70) or (sig == -1 and 30 < RSI[p] < 60):
+            conf += 1                            # RSI confirmation
+        if ADX[p] >= adx_min + 5:
+            conf += 1                            # strong trend
+        if conf < 2:
             continue
 
         # ── Place trade ──
@@ -920,7 +952,13 @@ def run_cli_backtest_mode():
     a = ap.parse_args()
     sym = str(a.symbol or 'EURUSD').upper()
 
-    params = (a.ema, a.adx, a.sl_mult, a.rr)
+    # Use best_settings.json params unless explicitly overridden on CLI
+    cli_given = any(f'--{k}' in sys.argv for k in ('ema', 'adx', 'sl_mult', 'rr'))
+    if cli_given:
+        params = (a.ema, a.adx, a.sl_mult, a.rr)
+    else:
+        params = _load_best_params(sym)
+
     mode = str(a.mode or 'standard').lower()
     bars = max(1200, int(a.bars))
     df = fetch_data(sym, bars)
