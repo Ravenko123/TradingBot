@@ -12,7 +12,7 @@ import time
 import threading
 from enum import Enum
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
@@ -188,6 +188,22 @@ last_signals = {}
 
 # Track open positions to detect closures
 tracked_positions = {}
+
+# ── Safety state (matching backtest engine) ──────────────────────────────
+# Daily trade cap: 3/day forex, 5/day crypto (BTCUSD)
+daily_trade_count = {}   # {symbol: {date_str: int}}
+
+# Consecutive loss blocker: 3 consecutive SLs → block symbol for the day
+consecutive_losses = {}  # {symbol: int}
+blocked_symbols = {}     # {symbol: date_str} — blocked until next day
+
+# Post-SL cooldown: 4 bars (~1 hour on M15) after any SL
+sl_cooldown_until = {}   # {symbol: datetime}
+SL_COOLDOWN_MINUTES = 60  # 4 bars × 15 min = 60 min
+
+# Max hold time: auto-close positions exceeding max bars
+MAX_HOLD_MINUTES_FOREX = 96 * 15   # 96 bars × 15 min = 1440 min = 24 h
+MAX_HOLD_MINUTES_CRYPTO = 120 * 15 # 120 bars × 15 min = 1800 min = 30 h
 
 # Order retry settings
 MAX_ORDER_RETRIES = 3
@@ -1712,6 +1728,28 @@ def process_single_symbol(symbol: str, enabled: set, risk: float) -> tuple:
     # If we have a position → MANAGEMENT state
     if existing_pos:
         set_state(BotState.MANAGEMENT)
+        
+        # ── SAFETY: Max Hold Time (matching backtest: 96 bars forex, 120 crypto) ──
+        try:
+            open_time_str = tracked_positions.get(symbol, {}).get('open_time')
+            if open_time_str:
+                open_dt = datetime.strptime(open_time_str, '%Y-%m-%d %H:%M:%S')
+                elapsed_min = (datetime.now() - open_dt).total_seconds() / 60
+                is_crypto_or_index = symbol in ('BTCUSD', 'NAS100')
+                max_hold = MAX_HOLD_MINUTES_CRYPTO if is_crypto_or_index else MAX_HOLD_MINUTES_FOREX
+                if elapsed_min >= max_hold:
+                    print(f"⏰ {symbol}: Max hold time exceeded ({elapsed_min:.0f} min > {max_hold} min) — force closing")
+                    log_event(f"{symbol}: Max hold time close after {elapsed_min:.0f} min", "INFO")
+                    send_telegram_message(
+                        f"⏰ <b>Max Hold Time</b>\n"
+                        f"{symbol}: Position held {elapsed_min:.0f} min (limit: {max_hold})\n"
+                        f"P/L: ${existing_pos['profit']:.2f}\n"
+                        f"Auto-closing position"
+                    )
+                    if close_position(existing_pos):
+                        return (symbol, f"{symbol}:TIME_CLOSE", None)
+        except Exception as e:
+            print(f"[!] Max hold time check error {symbol}: {e}")
         pl = existing_pos['profit']
         
         # ── BREAK-EVEN & TRAILING STOP (per documentation) ──────────
@@ -1950,6 +1988,41 @@ def scan_markets(cfg: dict, verbose: bool = False):
                             f"Exit: {exit_price}\n"
                             f"Profit: ${profit:.2f}"
                         )
+                        
+                        # ── Safety state updates (matching backtest engine) ──
+                        today_str = datetime.now().strftime('%Y-%m-%d')
+                        
+                        # Determine exit reason from deal
+                        exit_reason = 'unknown'
+                        if deal.reason == 3:  # DEAL_REASON_SL
+                            exit_reason = 'SL'
+                        elif deal.reason == 4:  # DEAL_REASON_TP
+                            exit_reason = 'TP'
+                        elif profit < 0:
+                            exit_reason = 'SL'  # Assume SL if lost money
+                        else:
+                            exit_reason = 'TP'
+                        
+                        # Consecutive loss tracking
+                        if profit < 0:
+                            consecutive_losses[symbol] = consecutive_losses.get(symbol, 0) + 1
+                            if consecutive_losses[symbol] >= 3:
+                                blocked_symbols[symbol] = today_str
+                                print(f"🚫 {symbol}: 3 consecutive losses — blocked for today")
+                                log_event(f"{symbol}: Blocked after 3 consecutive losses", "WARN")
+                                send_telegram_message(
+                                    f"🚫 <b>Symbol Blocked</b>\n"
+                                    f"{symbol}: 3 consecutive losses\n"
+                                    f"Blocked until tomorrow"
+                                )
+                        else:
+                            consecutive_losses[symbol] = 0  # Win resets counter
+                        
+                        # Post-SL cooldown (4 bars = 60 min on M15)
+                        if exit_reason == 'SL':
+                            sl_cooldown_until[symbol] = datetime.now(timezone.utc) + timedelta(minutes=SL_COOLDOWN_MINUTES)
+                            print(f"⏳ {symbol}: SL cooldown until {sl_cooldown_until[symbol].strftime('%H:%M')}")
+                        
                         break
             
             del tracked_positions[symbol]
@@ -1976,6 +2049,41 @@ def scan_markets(cfg: dict, verbose: bool = False):
     # Execute any new signals (sequential for safety)
     for symbol, signal in signals_to_execute:
         set_state(BotState.EXECUTION)
+        
+        today_str = datetime.now().strftime('%Y-%m-%d')
+
+        # ── SAFETY: Reset daily blocks at new day ───────────────────
+        # Clear blocks for symbols that were blocked on a previous day
+        for sym in list(blocked_symbols.keys()):
+            if blocked_symbols[sym] != today_str:
+                del blocked_symbols[sym]
+                consecutive_losses[sym] = 0
+
+        # ── SAFETY: Consecutive Loss Blocker (3 losses → block for day) ──
+        if symbol in blocked_symbols and blocked_symbols[symbol] == today_str:
+            print(f"🚫 {symbol}: Blocked after 3 consecutive losses — skipping")
+            status.append(f"{symbol}:BLOCKED_LOSSES")
+            continue
+
+        # ── SAFETY: Post-SL Cooldown (4 bars = 60 min) ─────────────
+        if symbol in sl_cooldown_until:
+            if datetime.now(timezone.utc) < sl_cooldown_until[symbol]:
+                remaining = (sl_cooldown_until[symbol] - datetime.now(timezone.utc)).total_seconds() / 60
+                print(f"⏳ {symbol}: SL cooldown — {remaining:.0f} min remaining")
+                status.append(f"{symbol}:COOLDOWN")
+                continue
+            else:
+                del sl_cooldown_until[symbol]  # Cooldown expired
+
+        # ── SAFETY: Daily Trade Cap (3/day forex, 5/day crypto) ─────
+        is_crypto = symbol in ('BTCUSD',)
+        max_daily = 5 if is_crypto else 3
+        sym_daily = daily_trade_count.get(symbol, {})
+        trades_today = sym_daily.get(today_str, 0)
+        if trades_today >= max_daily:
+            print(f"📊 {symbol}: Daily trade cap reached ({trades_today}/{max_daily}) — skipping")
+            status.append(f"{symbol}:DAILY_CAP")
+            continue
 
         # ── SAFETY: Daily Drawdown Circuit Breaker (5 %) ────────────
         # Doc: "ak denný drawdown presiahne 5 %, bot automaticky deaktivuje obchodovanie"
@@ -2039,6 +2147,11 @@ def scan_markets(cfg: dict, verbose: bool = False):
             sig_key = f"{symbol}_{signal['direction']}"
             last_signals[sig_key] = datetime.now(timezone.utc)
             status.append(f"{symbol}:OPENED")
+            
+            # ── Increment daily trade counter ─────────────────────────
+            daily_trade_count.setdefault(symbol, {})
+            daily_trade_count[symbol][today_str] = daily_trade_count[symbol].get(today_str, 0) + 1
+            
             send_telegram_message(
                 f"✅ <b>Position Opened</b>\n"
                 f"{signal['direction']} {symbol}\n"
