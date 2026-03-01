@@ -1,0 +1,12 @@
+{
+  "account_id": "12345",
+  "connected": true,
+  "strategy": "zenith_ea",
+  "balance": 10000.0,
+  "equity": 10050.0,
+  "profit": 50.0,
+  "open_positions": 2,
+  "positions": [],
+  "timestamp": "2026-03-01T19:58:40.843838",
+  "source": "mt5_bridge_push"
+}

@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-03-01T18:58:11.667378+00:00",
+  "timestamp": "2026-03-01T20:51:46.788242+00:00",
   "state": "running",
   "message": "Scan cycle completed",
   "enabled_symbols": [
@@ -11,12 +11,13 @@
     "USDJPY",
     "XAUUSD"
   ],
-  "open_positions": 1,
+  "open_positions": 0,
+  "position_details": [],
   "signals_detected": 0,
   "positions_opened": 0,
   "failed_orders": 0,
-  "status_line": "EURUSD:- | GBPUSD:- | USDJPY:- | XAUUSD:- | GBPJPY:- | BTCUSD:\u25b2-$0 | NAS100:-",
-  "balance": 1000.0,
-  "equity": 999.52,
-  "floating_pnl": -0.48
+  "status_line": "EURUSD:- | GBPUSD:- | USDJPY:- | XAUUSD:- | GBPJPY:- | BTCUSD:- | NAS100:-",
+  "balance": 993.82,
+  "equity": 993.82,
+  "floating_pnl": 0.0
 }
