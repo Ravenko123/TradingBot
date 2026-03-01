@@ -79,6 +79,55 @@ def _configure_safe_console_output():
 
 _configure_safe_console_output()
 
+
+def _setup_log_tee():
+    """Tee stdout/stderr to bot_engine.log so the dashboard can read activity
+    regardless of how the bot was launched (terminal, auto-start, etc.)."""
+    log_path = Path(__file__).parent / 'liverun' / 'bot_engine.log'
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    class _Tee:
+        def __init__(self, original, log_file):
+            self._original = original
+            self._log = log_file
+
+        def write(self, data):
+            if data:
+                try:
+                    self._original.write(data)
+                    self._original.flush()
+                except Exception:
+                    pass
+                try:
+                    self._log.write(data)
+                    self._log.flush()
+                except Exception:
+                    pass
+
+        def flush(self):
+            try:
+                self._original.flush()
+            except Exception:
+                pass
+            try:
+                self._log.flush()
+            except Exception:
+                pass
+
+        def __getattr__(self, name):
+            return getattr(self._original, name)
+
+    try:
+        fh = open(log_path, 'a', encoding='utf-8', errors='replace', buffering=1)
+        fh.write(f"\n\n===== BOT START {datetime.now(timezone.utc).isoformat()} (direct) =====\n")
+        sys.stdout = _Tee(sys.stdout, fh)
+        sys.stderr = _Tee(sys.stderr, fh)
+    except Exception:
+        pass
+
+
+_setup_log_tee()
+
 # Optional AI layers (bot must still run without these files)
 try:
     from ai_brain import get_brain, TradingIntelligenceBrain
@@ -2244,11 +2293,34 @@ def scan_markets(cfg: dict, verbose: bool = False):
     except Exception:
         pass
 
+    # Serialize full position details so the dashboard can display them
+    # without needing its own MT5 connection
+    position_details = []
+    try:
+        raw_positions = get_open_positions()
+        for pos in raw_positions:
+            position_details.append({
+                'ticket': int(pos.ticket),
+                'symbol': pos.symbol,
+                'direction': 'BUY' if pos.type == mt5.ORDER_TYPE_BUY else 'SELL',
+                'volume': float(pos.volume),
+                'open_price': float(pos.price_open),
+                'current_price': float(pos.price_current),
+                'sl': float(pos.sl) if pos.sl else 0.0,
+                'tp': float(pos.tp) if pos.tp else 0.0,
+                'profit': float(pos.profit),
+                'swap': float(pos.swap),
+                'open_time': datetime.fromtimestamp(pos.time, tz=timezone.utc).isoformat(),
+            })
+    except Exception:
+        pass
+
     update_runtime_status(
         state='running',
         message='Scan cycle completed',
         enabled_symbols=sorted(enabled),
-        open_positions=len(get_open_positions()),
+        open_positions=len(position_details),
+        position_details=position_details,
         signals_detected=len(signals_to_execute),
         positions_opened=opened_count,
         failed_orders=fail_count,

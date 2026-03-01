@@ -1,14 +1,22 @@
 {
-  "timestamp": "2026-03-01T13:35:29.932397+00:00",
+  "timestamp": "2026-03-01T18:58:11.667378+00:00",
   "state": "running",
   "message": "Scan cycle completed",
   "enabled_symbols": [
+    "BTCUSD",
     "EURUSD",
-    "USDJPY"
+    "GBPJPY",
+    "GBPUSD",
+    "NAS100",
+    "USDJPY",
+    "XAUUSD"
   ],
-  "open_positions": 0,
+  "open_positions": 1,
   "signals_detected": 0,
   "positions_opened": 0,
   "failed_orders": 0,
-  "status_line": "EURUSD:- | USDJPY:-"
+  "status_line": "EURUSD:- | GBPUSD:- | USDJPY:- | XAUUSD:- | GBPJPY:- | BTCUSD:\u25b2-$0 | NAS100:-",
+  "balance": 1000.0,
+  "equity": 999.52,
+  "floating_pnl": -0.48
 }

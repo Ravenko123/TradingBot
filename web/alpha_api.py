@@ -2666,47 +2666,53 @@ def get_bot_activity():
 @app.route("/api/bot/positions", methods=["GET"])
 @require_auth
 def get_bot_positions():
+    # 1) Read from bot heartbeat (runtime_status.json) — no MT5 conflict
+    runtime = load_bot_runtime_state()
+    heartbeat_positions = runtime.get("position_details")
+    if isinstance(heartbeat_positions, list) and heartbeat_positions:
+        return json_response({"positions": heartbeat_positions, "source": "bot_heartbeat"})
+
+    # 2) Fallback: MT5 bridge push
     bridge = load_mt5_runtime_snapshot(request.user["id"])
     if bridge and isinstance(bridge.get("positions"), list):
         return json_response({"positions": bridge.get("positions", []), "source": "mt5_bridge_push"})
 
-    try:
-        import MetaTrader5 as mt5
-    except Exception:
-        return json_response({"positions": [], "message": "MetaTrader5 module not available"})
+    # 3) Fallback: open trades from SQLite
+    if TRADES_DB_FILE.exists():
+        try:
+            import sqlite3
+            conn = sqlite3.connect(str(TRADES_DB_FILE))
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT ticket, symbol, type as direction, open_price, lot_size as volume, "
+                "sl, tp, open_time FROM trades WHERE close_price IS NULL ORDER BY id DESC"
+            ).fetchall()
+            conn.close()
+            if rows:
+                positions = []
+                for r in rows:
+                    positions.append({
+                        "ticket": r["ticket"] or 0,
+                        "symbol": r["symbol"] or "?",
+                        "direction": r["direction"] or "?",
+                        "volume": float(r["volume"] or 0),
+                        "open_price": float(r["open_price"] or 0),
+                        "current_price": 0.0,
+                        "sl": float(r["sl"] or 0),
+                        "tp": float(r["tp"] or 0),
+                        "profit": 0.0,
+                        "open_time": r["open_time"] or "",
+                    })
+                return json_response({"positions": positions, "source": "sqlite_open_trades"})
+        except Exception:
+            pass
 
-    positions = []
-    inited = False
-    try:
-        inited = bool(mt5.initialize())
-        if not inited:
-            return json_response({"positions": [], "message": f"MT5 init failed: {mt5.last_error()}"})
+    # 4) Check heartbeat count — bot reports positions but details not yet available
+    pos_count = runtime.get("open_positions", 0)
+    if pos_count and int(pos_count) > 0:
+        return json_response({"positions": [], "message": f"Bot reports {pos_count} open position(s) — details loading next scan cycle"})
 
-        rows = mt5.positions_get() or []
-        for pos in rows:
-            positions.append({
-                "ticket": int(pos.ticket),
-                "symbol": pos.symbol,
-                "direction": "BUY" if int(pos.type) == mt5.ORDER_TYPE_BUY else "SELL",
-                "volume": float(pos.volume),
-                "open_price": float(pos.price_open),
-                "current_price": float(pos.price_current),
-                "sl": float(pos.sl) if pos.sl is not None else 0.0,
-                "tp": float(pos.tp) if pos.tp is not None else 0.0,
-                "profit": float(pos.profit),
-                "swap": float(pos.swap),
-                "comment": str(getattr(pos, "comment", "")),
-            })
-    except Exception as e:
-        return json_response({"positions": [], "message": f"Failed to fetch positions: {str(e)}"})
-    finally:
-        if inited:
-            try:
-                mt5.shutdown()
-            except Exception:
-                pass
-
-    return json_response({"positions": positions})
+    return json_response({"positions": [], "message": "No open positions"})
 
 
 @app.route("/api/bot/insights", methods=["GET"])

@@ -1779,7 +1779,7 @@ async function loadMt5Status() {
     } else {
         if (iconEl) { iconEl.classList.remove('connected'); iconEl.classList.add('disconnected'); iconEl.innerHTML = '<i class="fas fa-robot"></i>'; }
         if (titleEl) titleEl.textContent = 'Bot Stopped';
-        if (subEl) subEl.textContent = 'Start the bot via terminal: py -3 mt5_bot/main.py';
+        if (subEl) subEl.textContent = 'Use the Start Bot button above to begin trading';
         if (badgeEl) { badgeEl.classList.remove('connected'); badgeEl.classList.add('disconnected'); badgeEl.innerHTML = '<span class="status-dot"></span> Offline'; }
         if (healthIcon) { healthIcon.classList.remove('success'); healthIcon.classList.add('warning'); healthIcon.innerHTML = '<i class="fas fa-times-circle"></i>'; }
         if (healthStatus) healthStatus.textContent = 'Stopped';
