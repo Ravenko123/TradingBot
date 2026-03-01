@@ -508,6 +508,85 @@ async function handleStartStop() {
         setStatusText(statusEl, 'Telegram login saved. Restart bot to apply.');
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // BOT API KEY (Remote Connection)
+    // ═══════════════════════════════════════════════════════════════════
+    async function loadBotApiKey() {
+        const keyInput = document.getElementById('botApiKeyDisplay');
+        const urlInput = document.getElementById('dashboardUrlDisplay');
+        const statusEl = document.getElementById('botApiKeyStatus');
+        const hintEl = document.getElementById('botApiKeyHint');
+
+        // Auto-fill dashboard URL
+        if (urlInput) {
+            urlInput.value = window.location.origin;
+        }
+
+        const res = await apiFetch('/bot/api-key');
+        if (!res) return;
+
+        if (res.has_key) {
+            if (keyInput) keyInput.value = res.key_masked || '••••••••';
+            if (statusEl) {
+                const lastUsed = res.last_used_at ? `Last used: ${new Date(res.last_used_at).toLocaleString()}` : 'Never used';
+                setStatusText(statusEl, `Key active — ${lastUsed}`);
+            }
+        } else {
+            if (keyInput) keyInput.value = '';
+            if (keyInput) keyInput.placeholder = 'No key generated yet';
+            if (statusEl) setStatusText(statusEl, 'Generate a key to connect a remote bot.');
+        }
+    }
+
+    async function generateBotApiKey() {
+        const keyInput = document.getElementById('botApiKeyDisplay');
+        const statusEl = document.getElementById('botApiKeyStatus');
+        const btn = document.getElementById('generateBotApiKeyBtn');
+
+        if (btn) { btn.disabled = true; btn.classList.add('is-loading'); }
+
+        const res = await apiFetch('/bot/api-key/generate', { method: 'POST' });
+
+        if (btn) { btn.disabled = false; btn.classList.remove('is-loading'); }
+
+        if (!res || !res.success) {
+            setStatusText(statusEl, 'Failed to generate key.', true);
+            return;
+        }
+
+        // Show full key once so user can copy it
+        if (keyInput) {
+            keyInput.value = res.api_key;
+            keyInput.select();
+        }
+        setStatusText(statusEl, '⚠ Copy this key now! It won\'t be shown in full again.');
+    }
+
+    async function revokeBotApiKey() {
+        const statusEl = document.getElementById('botApiKeyStatus');
+        const keyInput = document.getElementById('botApiKeyDisplay');
+
+        if (!confirm('Revoke this API key? The remote bot will stop sending data.')) return;
+
+        const res = await apiFetch('/bot/api-key', { method: 'DELETE' });
+        if (res && res.success) {
+            if (keyInput) keyInput.value = '';
+            setStatusText(statusEl, 'API key revoked.');
+        } else {
+            setStatusText(statusEl, 'Failed to revoke key.', true);
+        }
+    }
+
+    function copyToClipboard(inputId) {
+        const input = document.getElementById(inputId);
+        if (!input || !input.value) return;
+        navigator.clipboard.writeText(input.value).then(() => {
+            const orig = input.value;
+            input.value = '✓ Copied!';
+            setTimeout(() => { input.value = orig; }, 1200);
+        });
+    }
+
 async function runBacktest() {
     // kill any running animation
     if (btAnimTimer) { clearTimeout(btAnimTimer); btAnimTimer = null; }
@@ -2079,6 +2158,10 @@ function initEvents() {
     bind('refreshLiveMonitorBtn', loadBotMonitor);
     bind('startStopBtn', handleStartStop);
     bind('saveTelegramConfigBtn', saveTelegramConfig);
+    bind('generateBotApiKeyBtn', generateBotApiKey);
+    bind('revokeBotApiKeyBtn', revokeBotApiKey);
+    bind('copyBotApiKeyBtn', () => copyToClipboard('botApiKeyDisplay'));
+    bind('copyDashUrlBtn', () => copyToClipboard('dashboardUrlDisplay'));
     bind('mt5HelpCloseBtn', closeMt5HelpPopup);
     bind('mt5HelpOkBtn', closeMt5HelpPopup);
     bind('mt5HelpBackdrop', closeMt5HelpPopup);
@@ -2375,7 +2458,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initEvents();
     startHeartbeatTicker();
     renderStartStopButton({ isRunning: false, loading: false });
-    Promise.all([loadStatus(), loadMetrics(), loadTrades(), loadEquity(), loadRuns(), loadRobustness(), loadMt5Status(), loadBotConfig(), loadBotMonitor(), loadTelegramConfig()]);
+    Promise.all([loadStatus(), loadMetrics(), loadTrades(), loadEquity(), loadRuns(), loadRobustness(), loadMt5Status(), loadBotConfig(), loadBotMonitor(), loadTelegramConfig(), loadBotApiKey()]);
     setInterval(loadRuns, 5000);
     setInterval(loadStatus, 5000);
     setInterval(loadBotMonitor, 7000);

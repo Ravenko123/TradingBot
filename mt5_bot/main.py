@@ -398,6 +398,61 @@ optimizer = ParameterOptimizer()
 # Initialize AI Brain
 brain = get_brain()
 
+# ── Remote dashboard push config ─────────────────────────────────────────
+DASHBOARD_CONFIG_FILE = Path(__file__).parent / 'dashboard_push.json'
+
+def _load_dashboard_push_config() -> dict:
+    """Load WEB_API_URL + BOT_API_KEY from dashboard_push.json or env vars."""
+    cfg = {
+        'web_api_url': os.getenv('WEB_API_URL', '').strip().rstrip('/'),
+        'bot_api_key': os.getenv('BOT_API_KEY', '').strip(),
+    }
+    if DASHBOARD_CONFIG_FILE.exists():
+        try:
+            data = json.loads(DASHBOARD_CONFIG_FILE.read_text())
+            if isinstance(data, dict):
+                cfg['web_api_url'] = str(data.get('web_api_url', '') or cfg['web_api_url']).strip().rstrip('/')
+                cfg['bot_api_key'] = str(data.get('bot_api_key', '') or cfg['bot_api_key']).strip()
+        except Exception:
+            pass
+    return cfg
+
+_dashboard_cfg = _load_dashboard_push_config()
+_push_session = requests.Session()
+_push_session.headers.update({'Content-Type': 'application/json'})
+
+
+def push_to_dashboard(endpoint: str, data: dict):
+    """HTTP POST data to the remote web dashboard. Fire-and-forget (non-blocking)."""
+    cfg = _dashboard_cfg
+    url = cfg.get('web_api_url', '')
+    key = cfg.get('bot_api_key', '')
+    if not url or not key:
+        return  # remote push not configured — skip silently
+    try:
+        _push_session.headers['X-Bot-Key'] = key
+        resp = _push_session.post(f"{url}{endpoint}", json=data, timeout=8)
+        if resp.status_code not in (200, 201):
+            print(f"[push] {endpoint} → HTTP {resp.status_code}")
+    except Exception as e:
+        print(f"[push] {endpoint} error: {e}")
+
+
+def _push_heartbeat_async(payload: dict):
+    """Push heartbeat to dashboard in a background thread."""
+    threading.Thread(target=push_to_dashboard, args=('/api/bot/push/heartbeat', payload), daemon=True).start()
+
+
+def _push_trade_async(data: dict):
+    """Push trade event to dashboard in a background thread."""
+    threading.Thread(target=push_to_dashboard, args=('/api/bot/push/trade', data), daemon=True).start()
+
+
+def _push_logs_async(lines: list):
+    """Push log lines to dashboard in a background thread."""
+    if lines:
+        threading.Thread(target=push_to_dashboard, args=('/api/bot/push/logs', {'lines': lines}), daemon=True).start()
+
 
 def update_runtime_status(**fields):
     """Persist lightweight runtime heartbeat for dashboard/API diagnostics."""
@@ -408,6 +463,8 @@ def update_runtime_status(**fields):
         }
         RUNTIME_STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
         RUNTIME_STATUS_FILE.write_text(json.dumps(payload, indent=2))
+        # Push to remote dashboard
+        _push_heartbeat_async(payload)
     except Exception:
         pass
 
@@ -617,7 +674,9 @@ def open_position_with_retry(signal: dict, sym_info: dict, risk_percent: float) 
             continue
         
         if result.retcode == mt5.TRADE_RETCODE_DONE:
-            print(f"[✓] Order filled: {signal['direction']} {lot_size} {signal['symbol']} @ {result.price}")
+            fill_line = f"[✓] Order filled: {signal['direction']} {lot_size} {signal['symbol']} @ {result.price}"
+            print(fill_line)
+            _push_logs_async([fill_line])
             signal['lot_size'] = lot_size  # Store for logging
             return True
         
@@ -1230,6 +1289,11 @@ def load_config() -> dict:
     cfg['max_daily_drawdown_pct'] = max(0.5, min(25.0, float(cfg.get('max_daily_drawdown_pct', MAX_DAILY_DRAWDOWN))))
     cfg['max_margin_usage_pct'] = max(5.0, min(95.0, float(cfg.get('max_margin_usage_pct', MAX_MARGIN_USAGE))))
     cfg['daily_drawdown_adjustment_usd'] = float(cfg.get('daily_drawdown_adjustment_usd', 0.0))
+
+    # Reload remote dashboard push config on each scan cycle
+    global _dashboard_cfg
+    _dashboard_cfg = _load_dashboard_push_config()
+
     return cfg
 
 
@@ -1975,6 +2039,16 @@ def scan_markets(cfg: dict, verbose: bool = False):
                                 exit_reason='SL/TP',
                             )
                             log_event(f"Trade closed: {prev_pos['direction']} {symbol} profit=${profit:.2f}", "INFO")
+                            _push_logs_async([f"Trade Closed: {prev_pos['direction']} {symbol} profit=${profit:.2f}"])
+                            # Push trade close to remote dashboard
+                            _push_trade_async({
+                                'action': 'close',
+                                'ticket': prev_pos.get('ticket', 0),
+                                'close_price': exit_price,
+                                'profit': profit,
+                                'exit_reason': 'SL/TP',
+                                'close_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            })
                         except Exception:
                             pass
                         
@@ -2172,7 +2246,9 @@ def scan_markets(cfg: dict, verbose: bool = False):
         # NEW SIGNAL - this is important, print it
         sym_info = get_symbol_info(symbol)
         dir_char = '▲' if signal['direction'] == 'BUY' else '▼'
-        print(f"\n>>> NEW SIGNAL: {dir_char} {signal['direction']} {symbol} @ {signal['entry']} | TP:{signal['tp']} SL:{signal['stop']}")
+        sig_line = f">>> NEW SIGNAL: {dir_char} {signal['direction']} {symbol} @ {signal['entry']} | TP:{signal['tp']} SL:{signal['stop']}"
+        print(f"\n{sig_line}")
+        _push_logs_async([sig_line])
         
         # Multi-timeframe confirmation (H1)
         params_for_htf = get_instrument_settings(symbol)
@@ -2255,6 +2331,19 @@ def scan_markets(cfg: dict, verbose: bool = False):
                         risk_percent=risk_used,
                     )
                     log_event(f"Trade opened: {signal['direction']} {symbol} @ {signal['entry']}", "INFO")
+                    # Push trade open to remote dashboard
+                    _push_trade_async({
+                        'action': 'open',
+                        'ticket': pos.get('ticket', 0),
+                        'symbol': symbol,
+                        'trade_type': signal['direction'],
+                        'open_price': signal['entry'],
+                        'sl': signal['stop'],
+                        'tp': signal['tp'],
+                        'lot_size': signal.get('lot_size', 0),
+                        'risk_percent': risk_used,
+                        'open_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    })
                 except Exception:
                     pass
                 
@@ -2329,6 +2418,10 @@ def scan_markets(cfg: dict, verbose: bool = False):
         equity=acct_equity,
         floating_pnl=acct_profit,
     )
+
+    # Push scan log line to remote dashboard for activity feed
+    scan_log_line = f"[{ts}] {' | '.join(sorted_status)}"
+    _push_logs_async([scan_log_line])
 
 
 def main():

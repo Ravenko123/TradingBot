@@ -148,6 +148,70 @@ def init_db():
         """
     )
 
+    # ── Remote bot push tables ───────────────────────────────────────────
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS bot_api_keys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            api_key TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL DEFAULT 'default',
+            created_at TEXT NOT NULL,
+            last_used_at TEXT,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        """
+    )
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS bot_heartbeats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            payload TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        """
+    )
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS bot_trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            ticket INTEGER,
+            symbol TEXT,
+            trade_type TEXT,
+            open_price REAL,
+            close_price REAL,
+            sl REAL,
+            tp REAL,
+            profit REAL,
+            lot_size REAL,
+            risk_percent REAL,
+            open_time TEXT,
+            close_time TEXT,
+            exit_reason TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        """
+    )
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS bot_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            level TEXT DEFAULT 'INFO',
+            message TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        """
+    )
+
     conn.commit()
     conn.close()
 
@@ -254,6 +318,52 @@ def require_auth(fn):
     return wrapper
 
 
+# ── In-memory cache for latest bot heartbeat (per user) ──────────────
+_bot_heartbeat_cache = {}   # {user_id: dict}
+_bot_heartbeat_lock = threading.Lock()
+
+
+def require_bot_key(fn):
+    """Authenticate requests from the remote bot using X-Bot-Key header."""
+    def wrapper(*args, **kwargs):
+        key = (request.headers.get("X-Bot-Key") or "").strip()
+        if not key:
+            return json_response({"success": False, "message": "Missing X-Bot-Key header"}, 401)
+
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT k.id, k.user_id, u.email, u.name
+            FROM bot_api_keys k
+            JOIN users u ON u.id = k.user_id
+            WHERE k.api_key = ?
+            """,
+            (key,)
+        )
+        row = cur.fetchone()
+
+        if not row:
+            conn.close()
+            return json_response({"success": False, "message": "Invalid bot API key"}, 401)
+
+        # Touch last_used_at
+        cur.execute("UPDATE bot_api_keys SET last_used_at = ? WHERE id = ?",
+                     (_utcnow().isoformat(), row["id"]))
+        conn.commit()
+        conn.close()
+
+        request.user = {
+            "id": row["user_id"],
+            "email": row["email"],
+            "name": row["name"],
+        }
+        return fn(*args, **kwargs)
+
+    wrapper.__name__ = fn.__name__
+    return wrapper
+
+
 def load_telegram_state():
     if TELEGRAM_STATE_FILE.exists():
         try:
@@ -269,12 +379,39 @@ def save_telegram_state(state):
         json.dump(state, f, indent=2)
 
 
-def load_bot_runtime_state():
+def load_bot_runtime_state(user_id: int = None):
+    """Load bot runtime state: local file → memory cache → DB heartbeat."""
+    # 1) Local file (same-machine scenario)
     if BOT_RUNTIME_FILE.exists():
         try:
-            return json.loads(BOT_RUNTIME_FILE.read_text())
+            data = json.loads(BOT_RUNTIME_FILE.read_text())
+            if data:
+                return data
         except Exception:
             pass
+
+    # 2) In-memory heartbeat cache (remote push scenario)
+    if user_id is not None:
+        with _bot_heartbeat_lock:
+            cached = _bot_heartbeat_cache.get(user_id)
+        if cached:
+            return cached
+
+    # 3) DB heartbeat (remote push — server restarted, cache empty)
+    if user_id is not None:
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT payload FROM bot_heartbeats WHERE user_id = ? ORDER BY id DESC LIMIT 1", (user_id,))
+            row = cur.fetchone()
+            conn.close()
+            if row:
+                data = json.loads(row["payload"])
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            pass
+
     return {}
 
 
@@ -298,14 +435,32 @@ def save_mt5_runtime_snapshot(user_id: int, payload: dict):
     p.write_text(json.dumps(payload, indent=2, default=str))
 
 
-def tail_bot_log(lines: int = 40) -> str:
-    if not BOT_LOG_FILE.exists():
-        return ""
-    try:
-        content = BOT_LOG_FILE.read_text(encoding="utf-8", errors="ignore").splitlines()
-        return "\n".join(content[-lines:])
-    except Exception:
-        return ""
+def tail_bot_log(lines: int = 40, user_id: int = None) -> str:
+    """Read bot log: local file first, fallback to bot_logs DB (remote scenario)."""
+    if BOT_LOG_FILE.exists():
+        try:
+            content = BOT_LOG_FILE.read_text(encoding="utf-8", errors="ignore").splitlines()
+            if content:
+                return "\n".join(content[-lines:])
+        except Exception:
+            pass
+
+    # Fallback: bot_logs table (remote push)
+    if user_id is not None:
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT message FROM bot_logs WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+                (user_id, lines)
+            )
+            rows = cur.fetchall()
+            conn.close()
+            if rows:
+                return "\n".join(r["message"] for r in reversed(rows))
+        except Exception:
+            pass
+    return ""
 
 
 def read_bot_config():
@@ -629,8 +784,8 @@ def mask_token(token: str) -> str:
     return f"{t[:4]}{'*' * (len(t) - 8)}{t[-4:]}"
 
 
-def parse_bot_activity(lines: int = 140):
-    raw = tail_bot_log(lines)
+def parse_bot_activity(lines: int = 140, user_id: int = None):
+    raw = tail_bot_log(lines, user_id=user_id)
     if not raw:
         return []
 
@@ -727,8 +882,8 @@ def resolve_bot_python() -> str:
     return sys.executable
 
 
-def load_trades():
-    # Try CSV first (live_trades.csv from bot)
+def load_trades(user_id: int = None):
+    # Try CSV first (live_trades.csv from bot — same-machine)
     if TRADES_FILE.exists():
         try:
             df = pd.read_csv(TRADES_FILE)
@@ -736,7 +891,7 @@ def load_trades():
                 return df
         except Exception:
             pass
-    # Fallback: SQLite trading.db
+    # Fallback: SQLite trading.db (same-machine)
     if TRADES_DB_FILE.exists():
         try:
             import sqlite3
@@ -754,6 +909,27 @@ def load_trades():
                 return pd.DataFrame([dict(r) for r in rows])
         except Exception:
             pass
+
+    # Fallback: bot_trades table (remote push scenario)
+    if user_id is not None:
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT symbol, trade_type as direction, open_price as entry_price, "
+                "close_price as exit_price, lot_size as quantity, profit, "
+                "close_time as timestamp, exit_reason "
+                "FROM bot_trades WHERE user_id = ? AND close_price IS NOT NULL "
+                "ORDER BY id DESC LIMIT 200",
+                (user_id,)
+            )
+            rows = cur.fetchall()
+            conn.close()
+            if rows:
+                return pd.DataFrame([dict(r) for r in rows])
+        except Exception:
+            pass
+
     return pd.DataFrame()
 
 
@@ -1202,7 +1378,7 @@ def mt5_connect():
 @app.route("/api/mt5/status", methods=["GET"])
 @require_auth
 def mt5_status():
-    runtime = load_bot_runtime_state()
+    runtime = load_bot_runtime_state(request.user["id"])
     runtime_state = str(runtime.get("state", "")).lower()
     runtime_connected = runtime_state in {"mt5_connected", "running", "starting"}
     bridge = load_mt5_runtime_snapshot(request.user["id"])
@@ -2359,7 +2535,7 @@ def get_ticker():
 def get_status():
     global BOT_PROCESS
     state = load_telegram_state()
-    runtime = load_bot_runtime_state()
+    runtime = load_bot_runtime_state(request.user["id"])
     bridge = load_mt5_runtime_snapshot(request.user["id"])
     process_alive = BOT_PROCESS is not None and BOT_PROCESS.poll() is None
 
@@ -2471,12 +2647,218 @@ def mt5_runtime_push():
     return json_response({"success": True, "saved": True, "timestamp": snapshot["timestamp"]})
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# REMOTE BOT PUSH ENDPOINTS — bot authenticates via X-Bot-Key header
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/bot/push/heartbeat", methods=["POST"])
+@require_bot_key
+def bot_push_heartbeat():
+    """Receive full runtime status heartbeat from a remote bot."""
+    payload = request.json or {}
+    user_id = request.user["id"]
+    now_iso = _utcnow().isoformat()
+    payload["received_at"] = now_iso
+
+    # Store in memory cache (fast reads for dashboard polling)
+    with _bot_heartbeat_lock:
+        _bot_heartbeat_cache[user_id] = payload
+
+    # Persist latest heartbeat to DB (one row per user, upsert)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM bot_heartbeats WHERE user_id = ?", (user_id,))
+    existing = cur.fetchone()
+    blob = json.dumps(payload, default=str)
+    if existing:
+        cur.execute("UPDATE bot_heartbeats SET payload = ?, created_at = ? WHERE user_id = ?",
+                     (blob, now_iso, user_id))
+    else:
+        cur.execute("INSERT INTO bot_heartbeats (user_id, payload, created_at) VALUES (?, ?, ?)",
+                     (user_id, blob, now_iso))
+    conn.commit()
+    conn.close()
+
+    # Also write to local runtime_status.json so existing endpoints still work
+    # when web + bot happen to be on same machine
+    try:
+        RUNTIME_STATUS_FILE = BOT_RUNTIME_FILE
+        RUNTIME_STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        RUNTIME_STATUS_FILE.write_text(json.dumps(payload, indent=2, default=str))
+    except Exception:
+        pass
+
+    return json_response({"success": True, "timestamp": now_iso})
+
+
+@app.route("/api/bot/push/trade", methods=["POST"])
+@require_bot_key
+def bot_push_trade():
+    """Receive a trade open or close event from a remote bot."""
+    payload = request.json or {}
+    user_id = request.user["id"]
+    now_iso = _utcnow().isoformat()
+
+    action = str(payload.get("action", "open")).lower()  # "open" or "close"
+
+    if action == "close":
+        # Update existing trade row
+        ticket = int(payload.get("ticket", 0) or 0)
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE bot_trades SET close_price = ?, profit = ?, close_time = ?, exit_reason = ? "
+            "WHERE user_id = ? AND ticket = ? AND close_price IS NULL",
+            (
+                float(payload.get("close_price", 0) or 0),
+                float(payload.get("profit", 0) or 0),
+                str(payload.get("close_time", now_iso)),
+                str(payload.get("exit_reason", "")),
+                user_id,
+                ticket,
+            )
+        )
+        conn.commit()
+        conn.close()
+        return json_response({"success": True, "action": "close", "ticket": ticket})
+
+    # action == "open" (default)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO bot_trades (user_id, ticket, symbol, trade_type, open_price, sl, tp, "
+        "lot_size, risk_percent, open_time, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            user_id,
+            int(payload.get("ticket", 0) or 0),
+            str(payload.get("symbol", "")),
+            str(payload.get("trade_type", "")),
+            float(payload.get("open_price", 0) or 0),
+            float(payload.get("sl", 0) or 0),
+            float(payload.get("tp", 0) or 0),
+            float(payload.get("lot_size", 0) or 0),
+            float(payload.get("risk_percent", 0) or 0),
+            str(payload.get("open_time", now_iso)),
+            now_iso,
+        )
+    )
+    conn.commit()
+    conn.close()
+    return json_response({"success": True, "action": "open", "ticket": int(payload.get("ticket", 0) or 0)})
+
+
+@app.route("/api/bot/push/logs", methods=["POST"])
+@require_bot_key
+def bot_push_logs():
+    """Receive log lines from a remote bot."""
+    payload = request.json or {}
+    user_id = request.user["id"]
+    now_iso = _utcnow().isoformat()
+
+    lines = payload.get("lines", [])
+    if isinstance(lines, str):
+        lines = [lines]
+
+    if not isinstance(lines, list) or not lines:
+        return json_response({"success": False, "message": "lines (array) required"}, 400)
+
+    conn = get_db()
+    cur = conn.cursor()
+    for line_obj in lines[-200:]:  # cap at 200 per push
+        if isinstance(line_obj, dict):
+            msg = str(line_obj.get("message", ""))
+            lvl = str(line_obj.get("level", "INFO"))
+        else:
+            msg = str(line_obj)
+            lvl = "INFO"
+        if msg.strip():
+            cur.execute(
+                "INSERT INTO bot_logs (user_id, level, message, created_at) VALUES (?, ?, ?, ?)",
+                (user_id, lvl, msg.strip(), now_iso)
+            )
+    conn.commit()
+
+    # Trim old logs (keep last 2000 per user)
+    cur.execute(
+        "DELETE FROM bot_logs WHERE user_id = ? AND id NOT IN "
+        "(SELECT id FROM bot_logs WHERE user_id = ? ORDER BY id DESC LIMIT 2000)",
+        (user_id, user_id)
+    )
+    conn.commit()
+    conn.close()
+    return json_response({"success": True, "stored": min(len(lines), 200)})
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BOT API KEY MANAGEMENT — user-facing (require_auth)
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/bot/api-key", methods=["GET"])
+@require_auth
+def get_bot_api_key():
+    """Get the current bot API key info (masked)."""
+    user_id = request.user["id"]
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT api_key, name, created_at, last_used_at FROM bot_api_keys WHERE user_id = ?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return json_response({"has_key": False})
+    return json_response({
+        "has_key": True,
+        "key_masked": mask_token(row["api_key"]),
+        "name": row["name"],
+        "created_at": row["created_at"],
+        "last_used_at": row["last_used_at"],
+    })
+
+
+@app.route("/api/bot/api-key/generate", methods=["POST"])
+@require_auth
+def generate_bot_api_key():
+    """Generate (or regenerate) a bot API key for the current user."""
+    user_id = request.user["id"]
+    new_key = f"zbot_{secrets.token_hex(24)}"
+    now_iso = _utcnow().isoformat()
+
+    conn = get_db()
+    cur = conn.cursor()
+    # Remove old key if exists — one key per user
+    cur.execute("DELETE FROM bot_api_keys WHERE user_id = ?", (user_id,))
+    cur.execute(
+        "INSERT INTO bot_api_keys (user_id, api_key, name, created_at) VALUES (?, ?, ?, ?)",
+        (user_id, new_key, "default", now_iso)
+    )
+    conn.commit()
+    conn.close()
+
+    return json_response({
+        "success": True,
+        "api_key": new_key,
+        "message": "New API key generated. Copy it now — it won't be shown again in full.",
+    })
+
+
+@app.route("/api/bot/api-key", methods=["DELETE"])
+@require_auth
+def revoke_bot_api_key():
+    """Revoke the current bot API key."""
+    user_id = request.user["id"]
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM bot_api_keys WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+    return json_response({"success": True, "message": "Bot API key revoked"})
+
+
 @app.route("/api/bot/logs", methods=["GET"])
 @require_auth
 def get_bot_logs():
     lines = request.args.get("lines", 80, type=int)
     lines = max(10, min(lines, 400))
-    return json_response({"logs": tail_bot_log(lines), "file": str(BOT_LOG_FILE)})
+    return json_response({"logs": tail_bot_log(lines, user_id=request.user["id"]), "file": str(BOT_LOG_FILE)})
 
 
 @app.route("/api/bot/config", methods=["GET"])
@@ -2646,7 +3028,7 @@ def reset_daily_drawdown_adjustment():
 def get_bot_activity():
     lines = request.args.get("lines", 160, type=int)
     lines = max(20, min(lines, 600))
-    events = parse_bot_activity(lines)
+    events = parse_bot_activity(lines, user_id=request.user["id"])
 
     summary = {
         "signals": sum(1 for e in events if e["type"] == "signal"),
@@ -2659,7 +3041,7 @@ def get_bot_activity():
     return json_response({
         "events": events,
         "summary": summary,
-        "runtime": load_bot_runtime_state(),
+        "runtime": load_bot_runtime_state(request.user["id"]),
     })
 
 
@@ -2667,7 +3049,7 @@ def get_bot_activity():
 @require_auth
 def get_bot_positions():
     # 1) Read from bot heartbeat (runtime_status.json) — no MT5 conflict
-    runtime = load_bot_runtime_state()
+    runtime = load_bot_runtime_state(request.user["id"])
     heartbeat_positions = runtime.get("position_details")
     if isinstance(heartbeat_positions, list) and heartbeat_positions:
         return json_response({"positions": heartbeat_positions, "source": "bot_heartbeat"})
@@ -2707,6 +3089,37 @@ def get_bot_positions():
         except Exception:
             pass
 
+    # 3b) Fallback: open trades from remote-pushed bot_trades table
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT ticket, symbol, trade_type as direction, open_price, lot_size as volume, "
+            "sl, tp, open_time FROM bot_trades WHERE user_id = ? AND close_price IS NULL "
+            "ORDER BY id DESC",
+            (request.user["id"],)
+        )
+        rows = cur.fetchall()
+        conn.close()
+        if rows:
+            positions = []
+            for r in rows:
+                positions.append({
+                    "ticket": r["ticket"] or 0,
+                    "symbol": r["symbol"] or "?",
+                    "direction": r["direction"] or "?",
+                    "volume": float(r["volume"] or 0),
+                    "open_price": float(r["open_price"] or 0),
+                    "current_price": 0.0,
+                    "sl": float(r["sl"] or 0),
+                    "tp": float(r["tp"] or 0),
+                    "profit": 0.0,
+                    "open_time": r["open_time"] or "",
+                })
+            return json_response({"positions": positions, "source": "remote_push_trades"})
+    except Exception:
+        pass
+
     # 4) Check heartbeat count — bot reports positions but details not yet available
     pos_count = runtime.get("open_positions", 0)
     if pos_count and int(pos_count) > 0:
@@ -2730,16 +3143,16 @@ def get_bot_insights():
     return json_response({
         "learned_params": learned,
         "learned_symbols": sorted(list(learned.keys())),
-        "runtime": load_bot_runtime_state(),
+        "runtime": load_bot_runtime_state(request.user["id"]),
     })
 
 
 @app.route("/api/metrics", methods=["GET"])
 @require_auth
 def get_metrics():
-    trades_df = load_trades()
+    trades_df = load_trades(user_id=request.user["id"])
     metrics = calculate_metrics(trades_df)
-    runtime = load_bot_runtime_state()
+    runtime = load_bot_runtime_state(request.user["id"])
 
     # Read live account data from bot heartbeat (runtime_status.json)
     live = None
@@ -2787,7 +3200,7 @@ def get_metrics():
 @app.route("/api/equity", methods=["GET"])
 @require_auth
 def get_equity():
-    trades_df = load_trades()
+    trades_df = load_trades(user_id=request.user["id"])
 
     if trades_df.empty:
         # ── Fallback: serve best stored backtest equity curve ──
@@ -2860,7 +3273,7 @@ def get_equity():
 @require_auth
 def get_trades():
     limit = request.args.get("limit", 50, type=int)
-    trades_df = load_trades()
+    trades_df = load_trades(user_id=request.user["id"])
 
     if trades_df.empty:
         return json_response([])
