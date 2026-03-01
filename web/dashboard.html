@@ -74,6 +74,7 @@
             <div class="top-bar-right">
                 <button class="btn btn-outline btn-sm" id="refreshBtn" title="Refresh all data"><i class="fas fa-sync-alt"></i></button>
                 <button class="btn btn-glow btn-sm" id="downloadBotPackageBtnTop" title="Download"><i class="fas fa-download"></i> Download</button>
+                <button class="btn btn-outline btn-sm" id="showCredsBtn" title="My Bot Credentials"><i class="fas fa-key"></i> My Credentials</button>
                 <a href="profile.html" class="btn btn-outline btn-sm" title="Profile"><i class="fas fa-user"></i></a>
             </div>
         </div>
@@ -865,6 +866,7 @@
                     <button class="btn btn-outline btn-sm" id="downloadPresentationBtn"><i class="fas fa-download"></i> Download Presentation Package</button>
                     <button class="btn btn-outline btn-sm" id="downloadOverfitProofBtn"><i class="fas fa-shield"></i> Download Overfit-Proof ZIP</button>
                     <button class="btn btn-outline btn-sm" id="downloadBotPackageBtn"><i class="fas fa-download"></i> Download</button>
+                    <button class="btn btn-outline btn-sm" id="showCredsBtn2" title="My Bot Credentials"><i class="fas fa-key"></i> My Credentials</button>
                 </div>
             </div>
 
@@ -1107,6 +1109,44 @@
             </div>
         </section>
     </main>
+
+    <!-- Bot Credentials Modal -->
+    <div id="credsModalBackdrop" class="modal-backdrop" style="display:none;">
+        <div class="modal-card glass-card" style="max-width:520px;width:90%;padding:28px 32px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+                <h3 style="margin:0;"><i class="fas fa-satellite-dish" style="color:var(--z-green);margin-right:8px;"></i>My Bot Credentials</h3>
+                <button class="btn btn-outline btn-sm" id="credsModalCloseBtn" style="border:none;font-size:1.2rem;padding:4px 8px;"><i class="fas fa-xmark"></i></button>
+            </div>
+            <p style="color:var(--z-muted);font-size:0.82rem;margin-bottom:16px;">Paste these into <code>mt5_bot/dashboard_push.json</code> on your VPS to connect the bot to this dashboard.</p>
+
+            <div class="form-group" style="margin-bottom:14px;">
+                <label style="font-size:0.78rem;"><i class="fas fa-globe" style="color:var(--z-green);margin-right:5px;"></i>Dashboard URL</label>
+                <div style="display:flex;gap:6px;">
+                    <input id="credsDashUrl" type="text" class="text-input" readonly style="flex:1;font-family:monospace;font-size:0.82rem;" />
+                    <button class="btn btn-outline btn-sm" id="credsCopyUrlBtn" title="Copy"><i class="fas fa-copy"></i></button>
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom:14px;">
+                <label style="font-size:0.78rem;"><i class="fas fa-key" style="color:var(--z-green);margin-right:5px;"></i>Bot API Key</label>
+                <div style="display:flex;gap:6px;">
+                    <input id="credsApiKey" type="text" class="text-input" readonly style="flex:1;font-family:monospace;font-size:0.82rem;" placeholder="Generating..." />
+                    <button class="btn btn-outline btn-sm" id="credsCopyKeyBtn" title="Copy"><i class="fas fa-copy"></i></button>
+                </div>
+                <span class="form-hint" id="credsKeyHint"></span>
+            </div>
+
+            <div style="background:var(--z-card-hover);border-radius:8px;padding:12px 14px;margin-bottom:14px;">
+                <label style="font-size:0.75rem;color:var(--z-muted);margin-bottom:6px;display:block;"><i class="fas fa-file-code" style="margin-right:4px;"></i>dashboard_push.json</label>
+                <pre id="credsJsonPreview" style="margin:0;font-size:0.78rem;color:var(--z-text);white-space:pre;overflow-x:auto;"></pre>
+            </div>
+
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+                <button class="btn btn-outline btn-sm" id="credsCopyJsonBtn"><i class="fas fa-copy"></i> Copy JSON</button>
+                <button class="btn btn-glow btn-sm" id="credsRegenKeyBtn"><i class="fas fa-wand-magic-sparkles"></i> New Key</button>
+            </div>
+        </div>
+    </div>
 
 
 
