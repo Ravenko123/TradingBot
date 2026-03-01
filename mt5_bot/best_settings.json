@@ -1,83 +1,48 @@
 {
-  "generated_at": "2026-02-27T00:00:00Z",
-  "source": "deep_optimizer_v2",
+  "generated_at": "2026-03-01T16:45:00Z",
+  "source": "param_sweep_m15_verified",
   "instruments": {
-    "EURUSD": {
-      "EMA": 15,
-      "ADX": 26.0,
-      "SL_Mult": 0.6,
-      "RR": 2.0,
-      "Trades": 5,
-      "Win_Rate": 100.0,
-      "PF": 99.0,
-      "Return_Pct": 4.350975714481082,
-      "Max_DD": 0.0
-    },
-    "GBPUSD": {
-      "EMA": 40,
-      "ADX": 26.0,
-      "SL_Mult": 2.0,
-      "RR": 1.0,
-      "Trades": 7,
-      "Win_Rate": 57.14285714285714,
-      "PF": 1.7060548842845322,
-      "Return_Pct": 3.1998402455230277,
-      "Max_DD": 229.32000440178308
-    },
-    "BTCUSD": {
-      "EMA": 20,
-      "ADX": 26.0,
-      "SL_Mult": 2.5,
-      "RR": 1.0,
-      "Trades": 21,
-      "Win_Rate": 47.61904761904761,
-      "PF": 1.0629623692968708,
-      "Return_Pct": 1.1127776806381007,
-      "Max_DD": 1545.5541411213817
-    },
     "USDJPY": {
-      "EMA": 15,
-      "ADX": 26.0,
+      "EMA": 50,
+      "ADX": 18.0,
       "SL_Mult": 2.0,
-      "RR": 1.5,
-      "Trades": 10,
-      "Win_Rate": 50.0,
-      "PF": 2.397106582705733,
-      "Return_Pct": 6.713911703422728,
-      "Max_DD": 264.92662061480223
+      "RR": 1.5
     },
     "XAUUSD": {
-      "EMA": 40,
-      "ADX": 26.0,
-      "SL_Mult": 2.0,
-      "RR": 1.2,
-      "Trades": 9,
-      "Win_Rate": 55.55555555555556,
-      "PF": 2.7814526380748053,
-      "Return_Pct": 7.759824406818461,
-      "Max_DD": 435.5897115066964
-    },
-    "GBPJPY": {
-      "EMA": 20,
-      "ADX": 18.0,
-      "SL_Mult": 0.6,
-      "RR": 2.0,
-      "Trades": 12,
-      "Win_Rate": 50.0,
-      "PF": 2.4866128543669754,
-      "Return_Pct": 9.674598760677199,
-      "Max_DD": 277.30454113394444
+      "EMA": 50,
+      "ADX": 20.0,
+      "SL_Mult": 1.0,
+      "RR": 2.5
     },
     "NAS100": {
-      "EMA": 80,
-      "ADX": 26.0,
+      "EMA": 50,
+      "ADX": 18.0,
+      "SL_Mult": 1.2,
+      "RR": 1.5
+    },
+    "EURUSD": {
+      "EMA": 50,
+      "ADX": 18.0,
+      "SL_Mult": 1.5,
+      "RR": 2.0
+    },
+    "GBPUSD": {
+      "EMA": 50,
+      "ADX": 18.0,
+      "SL_Mult": 1.0,
+      "RR": 1.5
+    },
+    "GBPJPY": {
+      "EMA": 50,
+      "ADX": 18.0,
       "SL_Mult": 2.0,
-      "RR": 1.2,
-      "Trades": 4,
-      "Win_Rate": 75.0,
-      "PF": 68.65020586146221,
-      "Return_Pct": 6.780083453003681,
-      "Max_DD": 10.022265810821409
+      "RR": 1.5
+    },
+    "BTCUSD": {
+      "EMA": 60,
+      "ADX": 18.0,
+      "SL_Mult": 1.8,
+      "RR": 2.0
     }
   }
 }

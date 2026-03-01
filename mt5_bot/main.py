@@ -170,7 +170,7 @@ TP_RR_RATIO = 2.5        # Take Profit at 2.5:1 risk-reward (aligned with improv
 BOS_VALIDITY = 50        # Order Block zone valid for 50 bars
 OB_SCAN = 20             # Look back up to 20 bars for OB candle
 SWING_LOOKBACK = 5       # Swing-point detection window
-MIN_CONFLUENCE = 4       # Minimum confluence score to enter (stricter filter for higher-quality setups)
+MIN_CONFLUENCE = 4       # Minimum confluence score to enter
 COOLDOWN_BARS = 3        # Minimum bars between signals
 
 # Safety mechanisms — circuit breakers
@@ -202,7 +202,7 @@ LEARNED_PARAMS_FILE = 'liverun/learned_params.json'
 
 # Optimizer settings
 OPTIMIZER_INTERVAL = 300  # Run optimizer every 5 minutes
-MIN_TRADES_FOR_LEARNING = 5  # Min closed trades before adjusting params
+MIN_TRADES_FOR_LEARNING = 20  # Min closed trades before adjusting params
 
 # param optimizer
 
@@ -779,6 +779,13 @@ def add_indicators(df: pd.DataFrame, fast_ema: int, slow_ema: int) -> pd.DataFra
     dx = 100 * (np.abs(di_plus - di_minus) / np.where((di_plus + di_minus) != 0, (di_plus + di_minus), np.nan))
     df['ADX'] = pd.Series(dx).rolling(ADX_PERIOD).mean().values
 
+    # RSI
+    delta = close_series.diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    rs = gain / loss.replace(0, np.nan)
+    df['RSI'] = (100 - (100 / (1 + rs))).fillna(50).values
+
     return df
 
 
@@ -831,6 +838,8 @@ def generate_signal(df: pd.DataFrame, params: dict, symbol: str, sym_info: dict)
     slow = int(params.get('EMA_Slow', 21))
     adx_th = float(params.get('ADX', ADX_THRESHOLD))
     atr_mult = float(params.get('ATR_Mult', 1.5))
+    rr_ratio = float(params.get('RR', TP_RR_RATIO))
+    rr_ratio = max(0.5, min(rr_ratio, 6.0))
 
     # Brain param adaptation (AI layer)
     try:
@@ -839,6 +848,7 @@ def generate_signal(df: pd.DataFrame, params: dict, symbol: str, sym_info: dict)
         if adapted_params:
             adx_th = float(adapted_params.get('ADX', adx_th))
             atr_mult = float(adapted_params.get('ATR_Mult', atr_mult))
+            rr_ratio = float(adapted_params.get('RR', rr_ratio))
     except Exception:
         pass
 
@@ -855,6 +865,7 @@ def generate_signal(df: pd.DataFrame, params: dict, symbol: str, sym_info: dict)
     ema_s_arr = df['EMA_Slow'].to_numpy().astype(float)
     adx_arr   = df['ADX'].to_numpy().astype(float)
     atr_arr   = df['ATR'].to_numpy().astype(float)
+    rsi_arr   = df['RSI'].to_numpy().astype(float)
     times     = pd.to_datetime(df['Time'])
     hours     = times.dt.hour.to_numpy()
 
@@ -993,6 +1004,7 @@ def generate_signal(df: pd.DataFrame, params: dict, symbol: str, sym_info: dict)
     ema_f = ema_f_arr[i]
     ema_s = ema_s_arr[i]
     atr_val = atr_arr[i]
+    rsi_val = rsi_arr[i]
 
     # Use LIVE bid/ask from MT5
     bid = sym_info['bid']
@@ -1018,6 +1030,12 @@ def generate_signal(df: pd.DataFrame, params: dict, symbol: str, sym_info: dict)
     bullish_trend = ema_f > ema_s
     bearish_trend = ema_f < ema_s
     if not bullish_trend and not bearish_trend:
+        return None
+
+    # Avoid late entries into stretched moves (extreme RSI only)
+    if bullish_trend and rsi_val >= 85.0:
+        return None
+    if bearish_trend and rsi_val <= 15.0:
         return None
 
     # Entry-level confluence helpers
@@ -1051,7 +1069,7 @@ def generate_signal(df: pd.DataFrame, params: dict, symbol: str, sym_info: dict)
             if entry_score >= MIN_CONFLUENCE:
                 entry = ask
                 stop = entry - (atr_mult * atr_val)
-                tp = entry + (atr_mult * atr_val * TP_RR_RATIO)
+                tp = entry + (atr_mult * atr_val * rr_ratio)
                 signal_result = {
                     'symbol': symbol,
                     'broker_symbol': sym_info['broker_symbol'],
@@ -1096,7 +1114,7 @@ def generate_signal(df: pd.DataFrame, params: dict, symbol: str, sym_info: dict)
             if entry_score >= MIN_CONFLUENCE:
                 entry = bid
                 stop = entry + (atr_mult * atr_val)
-                tp = entry - (atr_mult * atr_val * TP_RR_RATIO)
+                tp = entry - (atr_mult * atr_val * rr_ratio)
                 signal_result = {
                     'symbol': symbol,
                     'broker_symbol': sym_info['broker_symbol'],
@@ -2095,6 +2113,20 @@ def scan_markets(cfg: dict, verbose: bool = False):
 
     opened_count = sum(1 for s in status if s.endswith(':OPENED'))
     fail_count = sum(1 for s in status if s.endswith(':FAIL'))
+
+    # Grab account info for dashboard
+    acct_balance = 0.0
+    acct_equity = 0.0
+    acct_profit = 0.0
+    try:
+        acct = mt5.account_info()
+        if acct:
+            acct_balance = float(acct.balance)
+            acct_equity = float(acct.equity)
+            acct_profit = float(acct.profit)
+    except Exception:
+        pass
+
     update_runtime_status(
         state='running',
         message='Scan cycle completed',
@@ -2104,6 +2136,9 @@ def scan_markets(cfg: dict, verbose: bool = False):
         positions_opened=opened_count,
         failed_orders=fail_count,
         status_line=' | '.join(sorted_status),
+        balance=acct_balance,
+        equity=acct_equity,
+        floating_pnl=acct_profit,
     )
 
 

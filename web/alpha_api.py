@@ -1,6 +1,6 @@
 # api server for zenith trading bot
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, send_file
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import json
@@ -10,12 +10,16 @@ import threading
 import subprocess
 import secrets
 import re
+import io
+import zipfile
 from datetime import datetime, timedelta, timezone
 import pandas as pd
 import numpy as np
 import time as _time
 import sys
 from pathlib import Path
+import smtplib
+from email.mime.text import MIMEText
 
 WEB_DIR = Path(__file__).resolve().parent
 BASE_DIR = WEB_DIR.parent
@@ -32,7 +36,8 @@ def _utcnow():
 DB_DIR = WEB_DIR / "data"
 DB_PATH = DB_DIR / "app.db"
 
-TRADES_FILE = BASE_DIR / "trades.csv"
+TRADES_FILE = BASE_DIR / "mt5_bot" / "liverun" / "live_trades.csv"
+TRADES_DB_FILE = BASE_DIR / "mt5_bot" / "liverun" / "trading.db"
 TELEGRAM_STATE_FILE = BASE_DIR / "telegram_state.json"
 BACKTEST_RESULTS_DIR = BASE_DIR / "mt5_bot" / "backtest_results"
 BOT_RUNTIME_FILE = BASE_DIR / "mt5_bot" / "liverun" / "runtime_status.json"
@@ -41,9 +46,13 @@ BOT_VENV_PYTHON = BASE_DIR / ".venv" / "Scripts" / "python.exe"
 BOT_RUNTIME_CONFIG_FILE = BASE_DIR / "mt5_bot" / "runtime_config.json"
 TELEGRAM_CONFIG_FILE = BASE_DIR / "mt5_bot" / "telegram_config.json"
 BOT_LEARNED_PARAMS_FILE = BASE_DIR / "mt5_bot" / "liverun" / "learned_params.json"
+OVERFIT_PROOF_DIR = BASE_DIR / "mt5_bot" / "backtest_results" / "overfit_proof_20"
+OVERFIT_PROOF_ZIP = BASE_DIR / "mt5_bot" / "backtest_results" / "overfit_proof_20_package.zip"
+MT5_BRIDGE_DIR = DB_DIR / "mt5_bridge"
 MT5_INSTALL_URL = "https://www.metatrader5.com/en/download"
 BACKTEST_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 DB_DIR.mkdir(parents=True, exist_ok=True)
+MT5_BRIDGE_DIR.mkdir(parents=True, exist_ok=True)
 SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "GBPJPY", "BTCUSD", "NAS100"]
 MIN_BOT_RISK_PERCENT = 0.10
 MAX_BOT_RISK_PERCENT = 2.00
@@ -96,6 +105,20 @@ def init_db():
 
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS password_resets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token TEXT UNIQUE NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            used INTEGER DEFAULT 0,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        """
+    )
+
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS mt5_connections (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -141,6 +164,49 @@ def purge_expired_sessions():
     cur.execute("DELETE FROM sessions WHERE expires_at < ?", (_utcnow().isoformat(),))
     conn.commit()
     conn.close()
+
+
+def purge_expired_password_resets():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM password_resets WHERE expires_at < ? OR used = 1", (_utcnow().isoformat(),))
+    conn.commit()
+    conn.close()
+
+
+def _send_reset_email(to_email: str, token: str) -> bool:
+    """Try to send reset mail via SMTP if configured; fail silently otherwise."""
+    smtp_host = os.getenv("SMTP_HOST", "").strip()
+    smtp_user = os.getenv("SMTP_USER", "").strip()
+    smtp_pass = os.getenv("SMTP_PASS", "").strip()
+    smtp_port = int(os.getenv("SMTP_PORT", "587") or 587)
+    smtp_from = os.getenv("SMTP_FROM", smtp_user or "noreply@zenith.local").strip()
+    public_web_url = os.getenv("PUBLIC_WEB_URL", "http://localhost:5000").rstrip("/")
+
+    if not smtp_host or not smtp_user or not smtp_pass:
+        return False
+
+    reset_link = f"{public_web_url}/profile.html?reset_token={token}"
+    body = (
+        "Zenith Trading Bot - Password Reset\n\n"
+        "A password reset was requested for your account.\n"
+        f"Open this link to continue: {reset_link}\n\n"
+        "If you did not request this, you can safely ignore this email."
+    )
+
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = "Zenith - Password reset"
+    msg["From"] = smtp_from
+    msg["To"] = to_email
+
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_from, [to_email], msg.as_string())
+        return True
+    except Exception:
+        return False
 
 
 def get_auth_token():
@@ -210,6 +276,26 @@ def load_bot_runtime_state():
         except Exception:
             pass
     return {}
+
+
+def _runtime_snapshot_path(user_id: int) -> Path:
+    return MT5_BRIDGE_DIR / f"runtime_user_{int(user_id)}.json"
+
+
+def load_mt5_runtime_snapshot(user_id: int) -> dict:
+    p = _runtime_snapshot_path(user_id)
+    if not p.exists():
+        return {}
+    try:
+        data = json.loads(p.read_text())
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_mt5_runtime_snapshot(user_id: int, payload: dict):
+    p = _runtime_snapshot_path(user_id)
+    p.write_text(json.dumps(payload, indent=2, default=str))
 
 
 def tail_bot_log(lines: int = 40) -> str:
@@ -422,16 +508,33 @@ def _telegram_runtime_status_text() -> str:
     state = load_telegram_state()
     runtime = load_bot_runtime_state()
     process_alive = BOT_PROCESS is not None and BOT_PROCESS.poll() is None
-    running = state.get("is_running", False)
 
-    status = "running ✅" if (running and process_alive) else "stopped ⛔"
+    # Also detect externally-running bot via heartbeat
+    last_scan_time = runtime.get("timestamp")
+    external_alive = False
+    if last_scan_time:
+        try:
+            parsed = datetime.fromisoformat(str(last_scan_time).replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            age = int((datetime.now(timezone.utc) - parsed).total_seconds())
+            rt_state = str(runtime.get("state", "")).lower()
+            external_alive = age < 120 and rt_state in ("running", "starting", "mt5_connected", "degraded")
+        except Exception:
+            pass
+    effective_alive = process_alive or external_alive
+    running = state.get("is_running", False) or effective_alive
+
+    status = "running ✅" if (running and effective_alive) else "stopped ⛔"
+    symbols = runtime.get("enabled_symbols", [])
     return (
         f"Zenith status: {status}\n"
-        f"Process alive: {process_alive}\n"
+        f"Symbols: {', '.join(symbols) if symbols else 'none'}\n"
         f"Open positions: {runtime.get('open_positions', 0)}\n"
         f"Signals detected: {runtime.get('signals_detected', 0)}\n"
         f"Positions opened: {runtime.get('positions_opened', 0)}\n"
-        f"Failed orders: {runtime.get('failed_orders', 0)}"
+        f"Failed orders: {runtime.get('failed_orders', 0)}\n"
+        f"Message: {runtime.get('message', '-')}"
     )
 
 
@@ -625,12 +728,32 @@ def resolve_bot_python() -> str:
 
 
 def load_trades():
+    # Try CSV first (live_trades.csv from bot)
     if TRADES_FILE.exists():
         try:
             df = pd.read_csv(TRADES_FILE)
-            return df if not df.empty else pd.DataFrame()
+            if not df.empty:
+                return df
         except Exception:
-            return pd.DataFrame()
+            pass
+    # Fallback: SQLite trading.db
+    if TRADES_DB_FILE.exists():
+        try:
+            import sqlite3
+            conn = sqlite3.connect(str(TRADES_DB_FILE))
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT symbol, type as direction, open_price as entry_price, "
+                "close_price as exit_price, lot_size as quantity, profit, "
+                "close_time as timestamp, exit_reason "
+                "FROM trades WHERE close_price IS NOT NULL "
+                "ORDER BY id DESC LIMIT 200"
+            ).fetchall()
+            conn.close()
+            if rows:
+                return pd.DataFrame([dict(r) for r in rows])
+        except Exception:
+            pass
     return pd.DataFrame()
 
 
@@ -712,7 +835,14 @@ def calculate_metrics(trades_df):
     }
 
 
-def run_backtest_process(run_id: str, symbol: str, mode: str, split_ratio: float, mc_iterations: int):
+def run_backtest_process(
+    run_id: str,
+    symbol: str,
+    mode: str,
+    split_ratio: float,
+    mc_iterations: int,
+    periods: int = 20,
+):
     output_file = BACKTEST_RESULTS_DIR / f"{run_id}.json"
     script_path = BASE_DIR / "mt5_bot" / "backtest_improved.py"
     python_exe = resolve_bot_python()
@@ -728,6 +858,8 @@ def run_backtest_process(run_id: str, symbol: str, mode: str, split_ratio: float
         str(split_ratio),
         "--mc-iterations",
         str(mc_iterations),
+        "--periods",
+        str(max(2, int(periods))),
         "--run-id",
         run_id,
         "--output",
@@ -878,6 +1010,131 @@ def me():
     return json_response({"success": True, "user": request.user})
 
 
+@app.route("/api/auth/update-profile", methods=["POST"])
+@require_auth
+def update_profile():
+    data = request.json or {}
+    name = (data.get("name", "") or "").strip()
+    email = (data.get("email", "") or "").strip().lower()
+
+    if not name or not email:
+        return json_response({"success": False, "message": "Name and email are required."}, 400)
+    if "@" not in email or len(email) < 5:
+        return json_response({"success": False, "message": "Invalid email address."}, 400)
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            UPDATE users SET name = ?, email = ?
+            WHERE id = ?
+            """,
+            (name, email, request.user["id"]),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        return json_response({"success": False, "message": "Email already in use."}, 409)
+
+    cur.execute("SELECT id, name, email, created_at FROM users WHERE id = ?", (request.user["id"],))
+    user = cur.fetchone()
+    conn.close()
+    return json_response({"success": True, "message": "Profile updated.", "user": dict(user)})
+
+
+@app.route("/api/auth/change-password", methods=["POST"])
+@require_auth
+def change_password():
+    data = request.json or {}
+    current_password = data.get("current_password", "")
+    new_password = data.get("new_password", "")
+
+    if not current_password or not new_password:
+        return json_response({"success": False, "message": "Current and new password are required."}, 400)
+    if len(new_password) < 8:
+        return json_response({"success": False, "message": "New password must be at least 8 characters."}, 400)
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT password_hash FROM users WHERE id = ?", (request.user["id"],))
+    user = cur.fetchone()
+    if not user or not check_password_hash(user["password_hash"], current_password):
+        conn.close()
+        return json_response({"success": False, "message": "Current password is incorrect."}, 401)
+
+    cur.execute("UPDATE users SET password_hash = ? WHERE id = ?", (generate_password_hash(new_password), request.user["id"]))
+    conn.commit()
+    conn.close()
+    return json_response({"success": True, "message": "Password changed successfully."})
+
+
+@app.route("/api/auth/forgot-password", methods=["POST"])
+def forgot_password():
+    data = request.json or {}
+    email = (data.get("email", "") or "").strip().lower()
+
+    if not email:
+        return json_response({"success": True, "message": "If the email exists, a reset link was sent."})
+
+    purge_expired_password_resets()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, email FROM users WHERE email = ?", (email,))
+    user = cur.fetchone()
+
+    if user:
+        token = secrets.token_urlsafe(32)
+        expires_at = _utcnow() + timedelta(minutes=30)
+        cur.execute(
+            """
+            INSERT INTO password_resets (user_id, token, created_at, expires_at, used)
+            VALUES (?, ?, ?, ?, 0)
+            """,
+            (user["id"], token, _utcnow().isoformat(), expires_at.isoformat()),
+        )
+        conn.commit()
+        _send_reset_email(user["email"], token)
+
+    conn.close()
+    return json_response({"success": True, "message": "If the email exists, a reset link was sent."})
+
+
+@app.route("/api/auth/reset-password", methods=["POST"])
+def reset_password():
+    data = request.json or {}
+    token = (data.get("token", "") or "").strip()
+    new_password = data.get("new_password", "")
+
+    if not token or not new_password:
+        return json_response({"success": False, "message": "Token and new password are required."}, 400)
+    if len(new_password) < 8:
+        return json_response({"success": False, "message": "New password must be at least 8 characters."}, 400)
+
+    purge_expired_password_resets()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, user_id, expires_at, used
+        FROM password_resets
+        WHERE token = ?
+        """,
+        (token,),
+    )
+    row = cur.fetchone()
+
+    if not row or int(row["used"] or 0) == 1 or str(row["expires_at"]) < _utcnow().isoformat():
+        conn.close()
+        return json_response({"success": False, "message": "Invalid or expired reset token."}, 400)
+
+    cur.execute("UPDATE users SET password_hash = ? WHERE id = ?", (generate_password_hash(new_password), row["user_id"]))
+    cur.execute("UPDATE password_resets SET used = 1 WHERE id = ?", (row["id"],))
+    conn.commit()
+    conn.close()
+    return json_response({"success": True, "message": "Password has been reset."})
+
+
 @app.route("/api/auth/logout", methods=["POST"])
 @require_auth
 def logout():
@@ -888,6 +1145,31 @@ def logout():
     conn.commit()
     conn.close()
     return json_response({"success": True})
+
+
+@app.route("/api/auth/delete-account", methods=["POST"])
+@require_auth
+def delete_account():
+    data = request.json or {}
+    password = data.get("password", "")
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT password_hash FROM users WHERE id = ?", (request.user["id"],))
+    row = cur.fetchone()
+    if not row or not check_password_hash(row["password_hash"], password):
+        conn.close()
+        return json_response({"success": False, "message": "Invalid password."}, 401)
+
+    user_id = request.user["id"]
+    cur.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    cur.execute("DELETE FROM mt5_connections WHERE user_id = ?", (user_id,))
+    cur.execute("DELETE FROM backtest_runs WHERE user_id = ?", (user_id,))
+    cur.execute("DELETE FROM password_resets WHERE user_id = ?", (user_id,))
+    cur.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+    return json_response({"success": True, "message": "Account deleted."})
 
 
 # mt5
@@ -923,6 +1205,7 @@ def mt5_status():
     runtime = load_bot_runtime_state()
     runtime_state = str(runtime.get("state", "")).lower()
     runtime_connected = runtime_state in {"mt5_connected", "running", "starting"}
+    bridge = load_mt5_runtime_snapshot(request.user["id"])
 
     conn = get_db()
     cur = conn.cursor()
@@ -938,15 +1221,19 @@ def mt5_status():
 
     if not row:
         return json_response({
-            "connected": runtime_connected,
+            "connected": runtime_connected or bool(bridge),
             "runtime_connected": runtime_connected,
+            "bridge_connected": bool(bridge),
+            "bridge_account_id": bridge.get("account_id") if bridge else None,
             "runtime_state": runtime_state or None,
             "runtime_message": runtime.get("message"),
         })
 
     return json_response({
-        "connected": bool(row["connected"]) or runtime_connected,
+        "connected": bool(row["connected"]) or runtime_connected or bool(bridge),
         "runtime_connected": runtime_connected,
+        "bridge_connected": bool(bridge),
+        "bridge_account_id": bridge.get("account_id") if bridge else None,
         "runtime_state": runtime_state or None,
         "runtime_message": runtime.get("message"),
         "account_id": row["account_id"],
@@ -1146,6 +1433,15 @@ def _extract_metrics_from_payload(payload: dict) -> dict:
             "max_drawdown": 0,
             "return_pct": 0,
         }
+    if mode == "robustness_20":
+        return {
+            "total_trades": payload.get("periods_run", 0),
+            "win_rate": payload.get("consistency", 0),
+            "total_profit": payload.get("average_return_pct", 0),
+            "profit_factor": 0,
+            "max_drawdown": payload.get("worst_period_drawdown", 0),
+            "return_pct": payload.get("average_return_pct", 0),
+        }
     return payload.get("metrics", {}) or {}
 
 
@@ -1229,6 +1525,97 @@ def backtest_pairs_analytics():
     return json_response({"analytics": analytics, "count": len(analytics)})
 
 
+# ── stored backtest results (pre-computed) ──────────────────────────
+
+@app.route("/api/backtest/stored-results", methods=["GET"])
+@require_auth
+def backtest_stored_results():
+    """Return list of all pre-computed backtest results with metrics."""
+    results = []
+    if BACKTEST_RESULTS_DIR.exists():
+        for f in sorted(BACKTEST_RESULTS_DIR.glob("*.json")):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                trades = data.get("trades", [])
+                metrics = data.get("metrics", {})
+                eq = data.get("equity_curve", [])
+                if not trades and not eq:
+                    continue  # skip empty results
+                results.append({
+                    "file": f.name,
+                    "symbol": data.get("symbol", f.stem),
+                    "mode": data.get("mode", "unknown"),
+                    "timestamp": data.get("timestamp", ""),
+                    "total_trades": metrics.get("total_trades", len(trades)),
+                    "win_rate": round(metrics.get("win_rate", 0), 2),
+                    "total_profit": round(metrics.get("total_profit", 0), 2),
+                    "profit_factor": round(metrics.get("profit_factor", 0), 2),
+                    "max_drawdown": round(metrics.get("max_drawdown", 0), 2),
+                    "return_pct": round(metrics.get("return_pct", 0), 2),
+                    "final_balance": round(metrics.get("final_balance", 10000), 2),
+                    "equity_points": len(eq),
+                })
+            except Exception:
+                continue
+    return json_response({"results": results, "count": len(results)})
+
+
+@app.route("/api/backtest/stored-results/<filename>", methods=["GET"])
+@require_auth
+def backtest_stored_result_detail(filename):
+    """Return full backtest result including equity curve for a specific file."""
+    safe = Path(filename).name  # prevent path traversal
+    fp = BACKTEST_RESULTS_DIR / safe
+    if not fp.exists():
+        return json_response({"error": "Result not found"}, 404)
+    try:
+        data = json.loads(fp.read_text(encoding="utf-8"))
+    except Exception:
+        return json_response({"error": "Failed to parse result"}, 500)
+
+    trades = data.get("trades", [])
+    metrics = data.get("metrics", {})
+    eq = data.get("equity_curve", [])
+
+    # Build labels from trade exit times
+    labels = []
+    for i, t in enumerate(trades):
+        et = t.get("exit_time", t.get("entry_time", ""))
+        labels.append(et if et else str(i))
+    # equity_curve has one extra point for starting balance
+    if len(eq) > len(labels):
+        labels = ["Start"] + labels
+
+    return json_response({
+        "file": safe,
+        "symbol": data.get("symbol", ""),
+        "mode": data.get("mode", ""),
+        "timestamp": data.get("timestamp", ""),
+        "metrics": metrics,
+        "equity_curve": eq,
+        "labels": labels,
+        "trades_count": len(trades),
+        "trades_sample": trades[:20],  # first 20 for table preview
+    })
+
+
+@app.route("/api/backtest/stored-results/<filename>/download", methods=["GET"])
+@require_auth
+def backtest_stored_result_download(filename):
+    """Download raw stored backtest result JSON by filename."""
+    safe = Path(filename).name  # prevent path traversal
+    fp = BACKTEST_RESULTS_DIR / safe
+    if not fp.exists():
+        return json_response({"success": False, "message": "Result not found"}, 404)
+
+    return send_file(
+        str(fp),
+        mimetype="application/json",
+        as_attachment=True,
+        download_name=safe,
+    )
+
+
 @app.route("/api/backtest/run", methods=["POST"])
 @require_auth
 def backtest_run():
@@ -1237,12 +1624,13 @@ def backtest_run():
     mode = data.get("mode", "standard")
     split_ratio = float(data.get("split_ratio", 0.7))
     mc_iterations = int(data.get("mc_iterations", 200))
+    periods = int(data.get("periods", 20))
 
     run_id = create_run(request.user["id"], symbol, mode)
 
     thread = threading.Thread(
         target=run_backtest_process,
-        args=(run_id, symbol, mode, split_ratio, mc_iterations),
+        args=(run_id, symbol, mode, split_ratio, mc_iterations, periods),
         daemon=True
     )
     thread.start()
@@ -1255,9 +1643,10 @@ def backtest_run():
 def backtest_run_suite():
     """Run full 7-symbol suite with multiple modes for overfitting proof."""
     data = request.json or {}
-    modes = data.get("modes", ["standard", "walk_forward", "split", "monte_carlo"])
+    modes = data.get("modes", ["standard", "walk_forward", "split", "monte_carlo", "robustness_20"])
     split_ratio = float(data.get("split_ratio", 0.7))
     mc_iterations = int(data.get("mc_iterations", 200))
+    periods = int(data.get("periods", 20))
 
     started_runs = []
     for symbol in SYMBOLS:
@@ -1266,12 +1655,33 @@ def backtest_run_suite():
             started_runs.append({"run_id": run_id, "symbol": symbol, "mode": mode})
             thread = threading.Thread(
                 target=run_backtest_process,
-                args=(run_id, symbol, mode, split_ratio, mc_iterations),
+                args=(run_id, symbol, mode, split_ratio, mc_iterations, periods),
                 daemon=True
             )
             thread.start()
 
     return json_response({"success": True, "started": started_runs, "count": len(started_runs)})
+
+
+@app.route("/api/backtest/run-robustness-20", methods=["POST"])
+@require_auth
+def backtest_run_robustness_20():
+    """Run one 20-period robustness test for selected symbol."""
+    data = request.json or {}
+    symbol = str(data.get("symbol", "EURUSD") or "EURUSD").upper()
+    split_ratio = float(data.get("split_ratio", 0.7))
+    mc_iterations = int(data.get("mc_iterations", 200))
+    periods = int(data.get("periods", 20))
+
+    run_id = create_run(request.user["id"], symbol, "robustness_20")
+    thread = threading.Thread(
+        target=run_backtest_process,
+        args=(run_id, symbol, "robustness_20", split_ratio, mc_iterations, periods),
+        daemon=True,
+    )
+    thread.start()
+
+    return json_response({"success": True, "run_id": run_id, "status": "running", "mode": "robustness_20"})
 
 
 @app.route("/api/backtest/runs", methods=["GET"])
@@ -1283,8 +1693,9 @@ def backtest_runs():
         """
         SELECT id, symbol, mode, status, created_at, result_file
         FROM backtest_runs
-        WHERE user_id = ? AND status != 'completed'
+        WHERE user_id = ?
         ORDER BY created_at DESC
+        LIMIT 500
         """,
         (request.user["id"],)
     )
@@ -1387,6 +1798,9 @@ def compute_robustness_for_user(user_id: int):
         elif mode == "standard":
             value = float(result.get("metrics", {}).get("total_profit", 0) or 0)
             passed = value > 0
+        elif mode == "robustness_20":
+            value = float(result.get("consistency", 0) or 0)
+            passed = value >= 55.0
 
         checks.append({
             "symbol": symbol,
@@ -1408,6 +1822,297 @@ def compute_robustness_for_user(user_id: int):
         },
         "details": checks
     }
+
+
+def _build_equity_png_bytes(points, title="Equity Curve"):
+    if not points or len(points) < 2:
+        return None
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:
+        return None
+
+    x = list(range(1, len(points) + 1))
+    fig = plt.figure(figsize=(10, 4), dpi=120)
+    ax = fig.add_subplot(1, 1, 1)
+    ax.plot(x, points, linewidth=2)
+    ax.set_title(title)
+    ax.set_xlabel("Step")
+    ax.set_ylabel("Balance")
+    ax.grid(alpha=0.3)
+
+    buf = io.BytesIO()
+    fig.tight_layout()
+    fig.savefig(buf, format="png")
+    plt.close(fig)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def _mt5_ea_architecture_markdown() -> str:
+    return """# Zenith MT5 EA Architecture (Professional Setup)\n\n## Objective\nConvert strategy logic to MT5 Expert Advisor execution architecture for automated, prop-firm-ready operation.\n\n## Required EA Capabilities\n- MT5-native Expert Advisor (`.mq5` source compiled to `.ex5`)\n- Fully automated trade execution (no manual intervention)\n- Stable 24/7 VPS runtime\n- Restart-safe state recovery after MT5/VPS reboot\n- Risk controls: max risk per trade, max daily drawdown, max open positions\n- Algo Trading status check before order placement\n- Retry/error handling for requotes and temporary connection failures\n- Internet outage recovery with state resync\n\n## Runtime Guardrails\n- `risk_per_trade_pct`: hard capped by account plan\n- `max_daily_drawdown_pct`: disable new entries after breach\n- `max_open_positions`: prevent overexposure\n- `max_margin_usage_pct`: circuit breaker for leverage spikes\n\n## Suggested Deployment Modes\n1. **Prop-Firm mode**: tighter limits, lower risk (0.25%–0.75%), strict session and loss caps\n2. **Personal account mode**: moderate risk (0.5%–1.5%), broader symbol set\n\n## Build Output\nTo produce `.ex5`, compile `.mq5` inside MetaEditor (MT5).\nThis package contains architecture + settings + robustness evidence for school presentation.\n"""
+
+
+def _mt5_ea_template_mq5() -> str:
+     return """#property strict
+#property version   \"1.10\"
+#property description \"Zenith EA: risk guards + dashboard runtime push\"
+
+#include <Trade/Trade.mqh>
+CTrade trade;
+
+input double RiskPerTradePct = 0.70;
+input double MaxDailyDrawdownPct = 3.00;
+input int    MaxOpenPositions = 3;
+
+input bool   PushRuntimeToDashboard = true;
+input string DashboardApiPushUrl = \"http://127.0.0.1:5000/api/mt5/runtime/push\";
+input string DashboardBearerToken = \"\";
+input int    PushIntervalSeconds = 10;
+input string StrategyName = \"zenith_ea\";
+
+double g_dayStartEquity = 0.0;
+datetime g_dayStamp = 0;
+
+bool IsAlgoTradingEnabled() {
+    return (bool)TerminalInfoInteger(TERMINAL_TRADE_ALLOWED);
+}
+
+void RefreshDayAnchor() {
+    datetime now = TimeCurrent();
+    MqlDateTime t; TimeToStruct(now, t);
+    datetime day = StructToTime(t) - (t.hour*3600 + t.min*60 + t.sec);
+    if(g_dayStamp != day) {
+        g_dayStamp = day;
+        g_dayStartEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+    }
+}
+
+bool DailyDrawdownBreached() {
+    if(g_dayStartEquity <= 0.0) return false;
+    double eq = AccountInfoDouble(ACCOUNT_EQUITY);
+    double dd = (g_dayStartEquity - eq) / g_dayStartEquity * 100.0;
+    return dd >= MaxDailyDrawdownPct;
+}
+
+bool PositionLimitReached() {
+    return PositionsTotal() >= MaxOpenPositions;
+}
+
+void PushRuntimeSnapshot() {
+    if(!PushRuntimeToDashboard) return;
+    if(StringLen(DashboardApiPushUrl) < 10) return;
+    if(StringLen(DashboardBearerToken) < 10) return;
+
+    string accountId = IntegerToString((int)AccountInfoInteger(ACCOUNT_LOGIN));
+    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+    double profit = AccountInfoDouble(ACCOUNT_PROFIT);
+    int openPositions = (int)PositionsTotal();
+
+    string payload =
+        \"{\"
+        + \"\\\"account_id\\\":\\\"\" + accountId + \"\\\",\"
+        + \"\\\"connected\\\":true,\"
+        + \"\\\"strategy\\\":\\\"\" + StrategyName + \"\\\",\"
+        + \"\\\"balance\\\":\" + DoubleToString(balance, 2) + \",\"
+        + \"\\\"equity\\\":\" + DoubleToString(equity, 2) + \",\"
+        + \"\\\"profit\\\":\" + DoubleToString(profit, 2) + \",\"
+        + \"\\\"open_positions\\\":\" + IntegerToString(openPositions)
+        + \"}\";
+
+    string headers =
+        \"Content-Type: application/json\\r\\n\"
+        + \"Authorization: Bearer \" + DashboardBearerToken + \"\\r\\n\";
+
+    char data[];
+    char result[];
+    string resultHeaders;
+    StringToCharArray(payload, data, 0, StringLen(payload), CP_UTF8);
+
+    ResetLastError();
+    int code = WebRequest(\"POST\", DashboardApiPushUrl, headers, 7000, data, result, resultHeaders);
+    if(code == -1) {
+        Print(\"[ZenithEA] Runtime push failed. Error=\", GetLastError());
+        return;
+    }
+
+    if(code < 200 || code >= 300) {
+        Print(\"[ZenithEA] Runtime push HTTP code=\", code);
+    }
+}
+
+int OnInit() {
+    RefreshDayAnchor();
+    int sec = (int)MathMax((double)PushIntervalSeconds, 5.0);
+    EventSetTimer(sec);
+    return(INIT_SUCCEEDED);
+}
+
+void OnDeinit(const int reason) {
+    EventKillTimer();
+}
+
+void OnTimer() {
+    PushRuntimeSnapshot();
+}
+
+void OnTick() {
+    RefreshDayAnchor();
+
+    if(!IsAlgoTradingEnabled()) return;
+    if(DailyDrawdownBreached()) return;
+    if(PositionLimitReached()) return;
+
+    // TODO: insert ICT/SMC signal logic here.
+    // Runtime push continues independently via OnTimer().
+}
+"""
+
+
+def _build_bot_package_zip() -> io.BytesIO:
+    """Create in-memory zip package without source code (EA + runtime config templates)."""
+
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("ZenithEA.mq5", _mt5_ea_template_mq5())
+        zf.writestr(
+            "EA_Config_Template.set",
+            "RiskPerTradePct=0.70\n"
+            "MaxDailyDrawdownPct=3.0\n"
+            "MaxOpenPositions=3\n"
+            "PushRuntimeToDashboard=true\n"
+            "DashboardApiPushUrl=http://127.0.0.1:5000/api/mt5/runtime/push\n"
+            "DashboardBearerToken=PASTE_YOUR_TOKEN_HERE\n"
+            "PushIntervalSeconds=10\n"
+            "StrategyName=zenith_ea\n",
+        )
+
+        zf.writestr(
+            "README_DOWNLOAD.txt",
+            "Zenith Trading Bot package (no source code).\n"
+            "1) Open ZenithEA.mq5 in MetaEditor and compile to .ex5\n"
+            "2) Use EA_Config_Template.set as starting configuration\n"
+            "3) In MT5: Tools -> Options -> Expert Advisors -> allow WebRequest for your API domain\n"
+            "4) Set DashboardApiPushUrl + DashboardBearerToken inputs in EA\n"
+            "5) Attach compiled EA to chart; EA will push runtime snapshots to dashboard\n",
+        )
+
+    zip_buf.seek(0)
+    return zip_buf
+
+
+@app.route("/api/backtest/presentation-package", methods=["GET"])
+@require_auth
+def backtest_presentation_package():
+    """Download a ZIP package with robustness evidence + equity curve for presentation."""
+    symbol = str(request.args.get("symbol", "") or "").upper().strip()
+    user_id = request.user["id"]
+
+    conn = get_db()
+    cur = conn.cursor()
+    if symbol:
+        cur.execute(
+            """
+            SELECT id, symbol, mode, result_file, created_at
+            FROM backtest_runs
+            WHERE user_id = ? AND status = 'done' AND symbol = ?
+            ORDER BY CASE WHEN mode = 'robustness_20' THEN 0 ELSE 1 END, created_at DESC
+            LIMIT 1
+            """,
+            (user_id, symbol),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT id, symbol, mode, result_file, created_at
+            FROM backtest_runs
+            WHERE user_id = ? AND status = 'done'
+            ORDER BY CASE WHEN mode = 'robustness_20' THEN 0 ELSE 1 END, created_at DESC
+            LIMIT 1
+            """,
+            (user_id,),
+        )
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        return json_response({"success": False, "message": "No completed backtest run found."}, 404)
+
+    result_file = row["result_file"]
+    if not result_file or not os.path.exists(result_file):
+        return json_response({"success": False, "message": "Backtest result file missing."}, 404)
+
+    with open(result_file, "r") as f:
+        payload = json.load(f)
+
+    mode = str(row["mode"])
+    result_symbol = str(row["symbol"])
+    summary = compute_robustness_for_user(user_id)
+
+    equity = []
+    if mode == "robustness_20":
+        equity = [float(v) for v in payload.get("combined_equity_curve", [])]
+    elif mode == "monte_carlo":
+        equity = [float(v) for v in (payload.get("standard", {}) or {}).get("equity_curve", [])]
+    else:
+        equity = [float(v) for v in payload.get("equity_curve", [])]
+
+    report_json = {
+        "generated_at": _utcnow().isoformat(),
+        "user": request.user,
+        "symbol": result_symbol,
+        "mode": mode,
+        "result_run_id": row["id"],
+        "created_at": row["created_at"],
+        "robustness": summary,
+    }
+
+    package_name = f"zenith_presentation_{result_symbol}_{mode}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("report_summary.json", json.dumps(report_json, indent=2))
+        zf.writestr("run_payload.json", json.dumps(payload, indent=2))
+        zf.writestr("MT5_EA_Architecture.md", _mt5_ea_architecture_markdown())
+        zf.writestr("ZenithEA.mq5", _mt5_ea_template_mq5())
+        zf.writestr(
+            "EA_Config_Template.set",
+            "risk_per_trade_pct=0.50\nmax_daily_drawdown_pct=5.0\nmax_open_positions=3\nmax_margin_usage_pct=20.0\n",
+        )
+
+        if equity:
+            eq_df = pd.DataFrame({"step": list(range(1, len(equity) + 1)), "equity": equity})
+            zf.writestr("equity_curve.csv", eq_df.to_csv(index=False))
+            png = _build_equity_png_bytes(equity, title=f"{result_symbol} - {mode} Equity Curve")
+            if png:
+                zf.writestr("equity_curve.png", png)
+
+        if mode == "robustness_20":
+            period_rows = []
+            for item in payload.get("period_results", []):
+                m = item.get("metrics", {}) or {}
+                period_rows.append({
+                    "period_index": item.get("period_index"),
+                    "start_time": item.get("start_time"),
+                    "end_time": item.get("end_time"),
+                    "trades": m.get("total_trades", 0),
+                    "win_rate": m.get("win_rate", 0),
+                    "return_pct": m.get("return_pct", 0),
+                    "profit_factor": m.get("profit_factor", 0),
+                    "max_drawdown": m.get("max_drawdown", 0),
+                })
+            if period_rows:
+                zf.writestr("robustness_20_periods.csv", pd.DataFrame(period_rows).to_csv(index=False))
+
+    zip_buf.seek(0)
+    return send_file(
+        zip_buf,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=package_name,
+    )
 
 
 @app.route("/api/backtest/report-data", methods=["GET"])
@@ -1446,6 +2151,61 @@ def backtest_report_data():
         "runs_by_symbol": by_symbol,
         "robustness": robustness
     })
+
+
+@app.route("/api/backtest/overfit-proof/status", methods=["GET"])
+@require_auth
+def overfit_proof_status():
+    summaries = []
+    if OVERFIT_PROOF_DIR.exists():
+        summaries = sorted(
+            [p.name for p in OVERFIT_PROOF_DIR.glob("overfit_proof_summary_*.json")],
+            reverse=True,
+        )
+
+    return json_response({
+        "available": bool(OVERFIT_PROOF_ZIP.exists()),
+        "zip_path": str(OVERFIT_PROOF_ZIP) if OVERFIT_PROOF_ZIP.exists() else None,
+        "latest_summary": summaries[0] if summaries else None,
+        "summary_count": len(summaries),
+    })
+
+
+@app.route("/api/backtest/overfit-proof/download", methods=["GET"])
+@require_auth
+def overfit_proof_download():
+    if not OVERFIT_PROOF_ZIP.exists():
+        return json_response({
+            "success": False,
+            "message": "Overfit-proof package not found. Generate it first.",
+        }, 404)
+
+    return send_file(
+        str(OVERFIT_PROOF_ZIP),
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=OVERFIT_PROOF_ZIP.name,
+    )
+
+
+@app.route("/api/bot/download-package", methods=["GET"])
+@require_auth
+def bot_download_package():
+    """Download bot source package from the website."""
+    try:
+        zip_buf = _build_bot_package_zip()
+    except FileNotFoundError:
+        return json_response({"success": False, "message": "mt5_bot folder not found."}, 404)
+    except Exception as e:
+        return json_response({"success": False, "message": f"Failed to build bot package: {str(e)}"}, 500)
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return send_file(
+        zip_buf,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"zenith_bot_package_{stamp}.zip",
+    )
 
 
 # bot + dashboard
@@ -1572,18 +2332,10 @@ def get_status():
     global BOT_PROCESS
     state = load_telegram_state()
     runtime = load_bot_runtime_state()
+    bridge = load_mt5_runtime_snapshot(request.user["id"])
     process_alive = BOT_PROCESS is not None and BOT_PROCESS.poll() is None
-    running = state.get("is_running", False)
 
-    if running and not process_alive:
-        running = False
-        state["is_running"] = False
-        save_telegram_state(state)
-    elif process_alive and not running:
-        running = True
-        state["is_running"] = True
-        save_telegram_state(state)
-
+    # --- Detect externally-started bot via runtime_status.json heartbeat ---
     last_scan_time = runtime.get("timestamp")
     last_scan_age_s = None
     if last_scan_time:
@@ -1595,28 +2347,58 @@ def get_status():
         except Exception:
             last_scan_age_s = None
 
+    # Bot is "externally alive" if runtime_status.json was updated within last
+    # 120 seconds and its state field is not 'stopped' or 'error'.
+    runtime_state = str(runtime.get("state", "")).lower()
+    external_alive = (
+        last_scan_age_s is not None
+        and last_scan_age_s < 120
+        and runtime_state in ("running", "starting", "mt5_connected", "degraded")
+    )
+
+    running = state.get("is_running", False)
+
+    if bridge:
+        running = bool(bridge.get("connected", True))
+
+    # Reconcile: treat bot as running if process OR external heartbeat is alive
+    effective_alive = process_alive or external_alive
+
+    if running and not effective_alive:
+        running = False
+        state["is_running"] = False
+        save_telegram_state(state)
+    elif effective_alive and not running:
+        running = True
+        state["is_running"] = True
+        save_telegram_state(state)
+
     engine_status = "stopped"
-    if process_alive and running:
+    if effective_alive and running:
         engine_status = "running"
         if last_scan_age_s is not None and last_scan_age_s > 45:
             engine_status = "running_stale"
-    elif process_alive:
+    elif effective_alive:
         engine_status = "process_only"
 
     return json_response({
         "status": "running" if running else "stopped",
-        "active_strategy": state.get("strategy", None),
+        "active_strategy": state.get("strategy", None) or (bridge.get("strategy") if bridge else None),
         "engine_status": engine_status,
-        "process_alive": process_alive,
+        "process_alive": effective_alive,
         "pid": BOT_PROCESS.pid if process_alive else None,
         "last_scan_time": last_scan_time,
         "last_scan_age_s": last_scan_age_s,
         "runtime_message": runtime.get("message"),
+        "runtime_state": runtime_state or None,
         "status_line": runtime.get("status_line"),
-        "open_positions": runtime.get("open_positions"),
+        "enabled_symbols": runtime.get("enabled_symbols"),
+        "open_positions": bridge.get("open_positions", runtime.get("open_positions")) if bridge else runtime.get("open_positions"),
         "signals_detected": runtime.get("signals_detected"),
         "positions_opened": runtime.get("positions_opened"),
         "failed_orders": runtime.get("failed_orders"),
+        "bridge_connected": bool(bridge),
+        "bridge_account_id": bridge.get("account_id") if bridge else None,
         "timestamp": _utcnow().isoformat()
     })
 
@@ -1624,17 +2406,45 @@ def get_status():
 @app.route("/api/bot/start", methods=["POST"])
 @require_auth
 def start_bot():
-    ensure_telegram_remote_loop()
-    payload, status = _start_bot_engine(trigger="api")
-    return json_response(payload, status)
+    return json_response({
+        "success": False,
+        "message": "Disabled in web. Download bot package and run on MT5/VPS, then push runtime to dashboard.",
+    }, 410)
 
 
 @app.route("/api/bot/stop", methods=["POST"])
 @require_auth
 def stop_bot():
-    ensure_telegram_remote_loop()
-    payload, status = _stop_bot_engine(trigger="api")
-    return json_response(payload, status)
+    return json_response({
+        "success": False,
+        "message": "Disabled in web. Stop bot from your VPS/MT5 runtime.",
+    }, 410)
+
+
+@app.route("/api/mt5/runtime/push", methods=["POST"])
+@require_auth
+def mt5_runtime_push():
+    payload = request.json or {}
+    user_id = request.user["id"]
+
+    account_id = str(payload.get("account_id", "") or "").strip()
+    if not account_id:
+        return json_response({"success": False, "message": "account_id is required"}, 400)
+
+    snapshot = {
+        "account_id": account_id,
+        "connected": bool(payload.get("connected", True)),
+        "strategy": str(payload.get("strategy", "mt5_ea")),
+        "balance": float(payload.get("balance", 0) or 0),
+        "equity": float(payload.get("equity", 0) or 0),
+        "profit": float(payload.get("profit", 0) or 0),
+        "open_positions": int(payload.get("open_positions", 0) or 0),
+        "positions": payload.get("positions", []) if isinstance(payload.get("positions", []), list) else [],
+        "timestamp": _utcnow().isoformat(),
+        "source": "mt5_bridge_push",
+    }
+    save_mt5_runtime_snapshot(user_id, snapshot)
+    return json_response({"success": True, "saved": True, "timestamp": snapshot["timestamp"]})
 
 
 @app.route("/api/bot/logs", methods=["GET"])
@@ -1832,6 +2642,10 @@ def get_bot_activity():
 @app.route("/api/bot/positions", methods=["GET"])
 @require_auth
 def get_bot_positions():
+    bridge = load_mt5_runtime_snapshot(request.user["id"])
+    if bridge and isinstance(bridge.get("positions"), list):
+        return json_response({"positions": bridge.get("positions", []), "source": "mt5_bridge_push"})
+
     try:
         import MetaTrader5 as mt5
     except Exception:
@@ -1895,7 +2709,23 @@ def get_bot_insights():
 def get_metrics():
     trades_df = load_trades()
     metrics = calculate_metrics(trades_df)
-    live = get_live_account_snapshot()
+    runtime = load_bot_runtime_state()
+
+    # Read live account data from bot heartbeat (runtime_status.json)
+    live = None
+    rt_balance = runtime.get("balance")
+    if rt_balance and float(rt_balance) > 0:
+        live = {
+            "balance": float(rt_balance),
+            "equity": float(runtime.get("equity", 0) or 0),
+            "profit": float(runtime.get("floating_pnl", 0) or 0),
+            "open_positions": int(runtime.get("open_positions", 0) or 0),
+            "source": "bot_heartbeat",
+        }
+
+    # Fallback: try MT5 direct if no heartbeat data
+    if not live:
+        live = get_live_account_snapshot()
 
     starting_balance = 10000
     current_balance = live["balance"] if live else (starting_balance + metrics["total_pnl"])
@@ -1930,6 +2760,35 @@ def get_equity():
     trades_df = load_trades()
 
     if trades_df.empty:
+        # ── Fallback: serve best stored backtest equity curve ──
+        best_file = None
+        best_trades = 0
+        if BACKTEST_RESULTS_DIR.exists():
+            for f in BACKTEST_RESULTS_DIR.glob("*.json"):
+                try:
+                    d = json.loads(f.read_text(encoding="utf-8"))
+                    tc = len(d.get("trades", []))
+                    if tc > best_trades and d.get("equity_curve"):
+                        best_trades = tc
+                        best_file = f
+                except Exception:
+                    continue
+        if best_file:
+            d = json.loads(best_file.read_text(encoding="utf-8"))
+            eq = d["equity_curve"]
+            trades_list = d.get("trades", [])
+            labels = []
+            for t in trades_list:
+                et = t.get("exit_time", t.get("entry_time", ""))
+                labels.append(et if et else "")
+            if len(eq) > len(labels):
+                labels = ["Start"] + labels
+            return json_response({
+                "labels": labels,
+                "data": [float(v) for v in eq],
+                "source": "backtest",
+                "symbol": d.get("symbol", ""),
+            })
         return json_response({"labels": [], "data": []})
 
     timestamp_col = None

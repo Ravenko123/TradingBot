@@ -1,10 +1,10 @@
 {
-  "risk_percent": 0.5,
+  "risk_percent": 1.0,
   "max_daily_drawdown_pct": 3.0,
   "max_margin_usage_pct": 20.0,
   "daily_drawdown_adjustment_usd": 0.0,
   "enabled_symbols": [
-    "EURUSD",
-    "USDJPY"
+    "USDJPY",
+    "XAUUSD"
   ]
 }

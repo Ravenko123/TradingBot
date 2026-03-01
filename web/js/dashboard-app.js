@@ -91,43 +91,10 @@ async function apiFetchWithMeta(path, options = {}) {
     }
 }
 
-function isMt5UnavailableError(payload) {
-    if (!payload) return false;
-    if (payload.error_code === 'MT5_NOT_AVAILABLE') return true;
-
-    const text = `${payload.message || ''}\n${payload.logs || ''}`.toLowerCase();
-    return (
-        text.includes('mt5 init failed') ||
-        text.includes('cannot start without mt5 connection') ||
-        text.includes("no module named 'metatrader5'") ||
-        text.includes('no module named "metatrader5"')
-    );
-}
-
-function openMt5HelpPopup(payload = {}) {
-    const modal = document.getElementById('mt5HelpModal');
-    if (!modal) return;
-
-    const messageEl = document.getElementById('mt5HelpMessage');
-    const linkEl = document.getElementById('mt5InstallLink');
-
-    if (messageEl) {
-        messageEl.textContent = payload.help_message || 'The bot could not start because MetaTrader 5 is not available on this machine.';
-    }
-    if (linkEl) {
-        linkEl.href = payload.help_url || 'https://www.metatrader5.com/en/download';
-    }
-
-    modal.classList.add('is-open');
-    modal.setAttribute('aria-hidden', 'false');
-}
-
-function closeMt5HelpPopup() {
-    const modal = document.getElementById('mt5HelpModal');
-    if (!modal) return;
-    modal.classList.remove('is-open');
-    modal.setAttribute('aria-hidden', 'true');
-}
+// MT5 help popup removed — bot runs independently on local machine
+function isMt5UnavailableError() { return false; }
+function openMt5HelpPopup() {}
+function closeMt5HelpPopup() {}
 
 function setStatusText(el, message, isError = false) {
     if (!el) return;
@@ -323,8 +290,17 @@ async function loadStatus() {
         }
     }
     if (strategy) strategy.textContent = status.active_strategy || '—';
-    if (pid) pid.textContent = status.pid ? String(status.pid) : '—';
+    if (pid) pid.textContent = status.pid ? String(status.pid) : (isRunning ? 'External' : '—');
     if (lastUpdate) lastUpdate.textContent = formatTime(new Date().toISOString());
+
+    // Show enabled symbols in status line area
+    const symbolsEl = document.getElementById('botSymbols');
+    if (symbolsEl) {
+        const syms = status.enabled_symbols;
+        symbolsEl.textContent = Array.isArray(syms) && syms.length ? syms.join(', ') : '—';
+    }
+    const msgEl = document.getElementById('botMessage');
+    if (msgEl) msgEl.textContent = status.runtime_message || '—';
 
     tickLiveStatusClock();
 }
@@ -1109,35 +1085,623 @@ function finishBacktest() {
 
 async function runSuite() {
     const s = document.getElementById('btStatus');
-    setStatusText(s, 'Starting full suite (7 symbols × 4 modes)...');
-    const r = await apiFetch('/backtest/run-suite', { method: 'POST', body: JSON.stringify({ modes: ['standard', 'walk_forward', 'split', 'monte_carlo'] }) });
+    setStatusText(s, 'Starting full suite (7 symbols × 5 modes)...');
+    const r = await apiFetch('/backtest/run-suite', { method: 'POST', body: JSON.stringify({ modes: ['standard', 'walk_forward', 'split', 'monte_carlo', 'robustness_20'], periods: 20 }) });
     if (r && r.success) { setStatusText(s, `Started ${r.count} runs`); setTimeout(async () => { await loadRuns(); await loadRobustness(); }, 1200); }
     else setStatusText(s, 'Failed to start suite', true);
 }
 
-async function loadRuns() {
-    const data = await apiFetch('/backtest/runs');
-    const table = document.getElementById('runsTable');
-    if (!data || !table) return;
-    const runs = data.runs || [];
-    if (!runs.length) { table.innerHTML = '<tr><td colspan="6">No runs yet</td></tr>'; return; }
-    table.innerHTML = runs.map(r => `<tr>
-        <td>${r.id}</td><td>${r.symbol}</td><td>${r.mode}</td><td>${r.status}</td><td>${r.created_at}</td>
-        <td><button class="btn btn-sm btn-outline" data-run="${r.id}">View</button></td>
-    </tr>`).join('');
-    table.querySelectorAll('button[data-run]').forEach(btn => {
-        btn.addEventListener('click', () => loadRunResult(btn.dataset.run));
+async function runRobustness20() {
+    const status = document.getElementById('btStatus');
+    const symbolSel = document.getElementById('btSymbol');
+    const symbol = symbolSel ? symbolSel.value : 'EURUSD';
+
+    setStatusText(status, `Starting 20-period robustness for ${symbol}...`);
+    const res = await apiFetch('/backtest/run-robustness-20', {
+        method: 'POST',
+        body: JSON.stringify({ symbol, periods: 20 })
+    });
+
+    if (res && res.success) {
+        setStatusText(status, `Robustness run queued: ${res.run_id}`);
+        setTimeout(async () => { await loadRuns(); await loadRobustness(); }, 1500);
+    } else {
+        setStatusText(status, 'Failed to start 20-period robustness run.', true);
+    }
+}
+
+async function downloadPresentationPackage() {
+    const status = document.getElementById('btStatus');
+    const symbolSel = document.getElementById('btSymbol');
+    const symbol = symbolSel ? symbolSel.value : 'EURUSD';
+    const token = getToken();
+    if (!token) {
+        setStatusText(status, 'Please log in again.', true);
+        return;
+    }
+
+    setStatusText(status, `Preparing presentation package for ${symbol}...`);
+    try {
+        const url = `${API_BASE_URL}/backtest/presentation-package?symbol=${encodeURIComponent(symbol)}`;
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (!response.ok) {
+            setStatusText(status, 'Could not generate package. Run a completed backtest first.', true);
+            return;
+        }
+
+        const blob = await response.blob();
+        const cd = response.headers.get('content-disposition') || '';
+        let filename = `zenith_presentation_${symbol}.zip`;
+        const m = cd.match(/filename="?([^";]+)"?/i);
+        if (m && m[1]) filename = m[1];
+
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(objectUrl);
+
+        setStatusText(status, `Downloaded ${filename}`);
+    } catch (e) {
+        console.error('Download package failed:', e);
+        setStatusText(status, 'Package download failed.', true);
+    }
+}
+
+// ═══════════ STORED BACKTEST RESULTS + EQUITY CURVES ═══════════
+
+let storedEquityChartInstance = null;
+
+async function loadStoredResults() {
+    const sel = document.getElementById('storedResultSelect');
+    const emptyEl = document.getElementById('storedResultsEmpty');
+    if (!sel) return;
+
+    try {
+        const data = await apiFetch('/backtest/stored-results');
+        if (!data || !data.results || data.results.length === 0) {
+            sel.innerHTML = '<option value="">No results available</option>';
+            if (emptyEl) emptyEl.style.display = '';
+            return;
+        }
+
+        sel.innerHTML = data.results.map(r =>
+            `<option value="${r.file}">${r.symbol} — ${r.mode} (${r.total_trades} trades, ${r.return_pct}% return)</option>`
+        ).join('');
+
+        if (emptyEl) emptyEl.style.display = 'none';
+
+        // Auto-load first result
+        sel.addEventListener('change', () => loadStoredResultDetail(sel.value));
+        loadStoredResultDetail(data.results[0].file);
+    } catch (e) {
+        console.error('Failed to load stored results:', e);
+    }
+}
+
+async function loadStoredResultDetail(filename) {
+    if (!filename) return;
+
+    const strip = document.getElementById('storedMetricsStrip');
+    const eqWrap = document.getElementById('storedEquityWrap');
+    const trWrap = document.getElementById('storedTradesWrap');
+
+    try {
+        const data = await apiFetch(`/backtest/stored-results/${encodeURIComponent(filename)}`);
+        if (!data) return;
+
+        const m = data.metrics || {};
+
+        // Show metrics
+        if (strip) {
+            strip.style.display = '';
+            setText('srTrades', m.total_trades ?? '—');
+            setText('srWinRate', m.win_rate != null ? m.win_rate.toFixed(1) + '%' : '—');
+            const profitEl = document.getElementById('srProfit');
+            if (profitEl) {
+                profitEl.textContent = '$' + (m.total_profit ?? 0).toFixed(2);
+                profitEl.className = 'stored-metric-value ' + ((m.total_profit || 0) >= 0 ? 'positive' : 'negative');
+            }
+            setText('srPF', m.profit_factor != null ? m.profit_factor.toFixed(2) : '—');
+            setText('srDD', '$' + (m.max_drawdown ?? 0).toFixed(2));
+            const retEl = document.getElementById('srReturn');
+            if (retEl) {
+                retEl.textContent = (m.return_pct ?? 0).toFixed(2) + '%';
+                retEl.className = 'stored-metric-value ' + ((m.return_pct || 0) >= 0 ? 'positive' : 'negative');
+            }
+            setText('srBalance', '$' + (m.final_balance ?? 10000).toFixed(2));
+        }
+
+        // Equity Curve
+        if (data.equity_curve && data.equity_curve.length > 0 && eqWrap) {
+            eqWrap.style.display = '';
+            renderStoredEquityCurve(data.labels, data.equity_curve, data.symbol);
+        }
+
+        // Trades sample
+        if (data.trades_sample && data.trades_sample.length > 0 && trWrap) {
+            trWrap.style.display = '';
+            const tbody = document.getElementById('storedTradesTable');
+            if (tbody) {
+                tbody.innerHTML = data.trades_sample.map(t => `<tr>
+                    <td>${t.entry_time || ''}</td>
+                    <td>${t.exit_time || ''}</td>
+                    <td>${t.direction || ''}</td>
+                    <td>${(t.entry_price || 0).toFixed(5)}</td>
+                    <td>${(t.exit_price || 0).toFixed(5)}</td>
+                    <td class="${(t.profit || 0) >= 0 ? 'positive' : 'negative'}">$${(t.profit || 0).toFixed(2)}</td>
+                    <td>${t.exit_reason || ''}</td>
+                </tr>`).join('');
+            }
+        }
+    } catch (e) {
+        console.error('Failed to load stored result detail:', e);
+    }
+}
+
+async function downloadSelectedStoredResult() {
+    const sel = document.getElementById('storedResultSelect');
+    const status = document.getElementById('btStatus');
+    const token = getToken();
+    if (!sel || !sel.value) {
+        setStatusText(status, 'Select a stored result first.', true);
+        return;
+    }
+    if (!token) {
+        setStatusText(status, 'Please log in again.', true);
+        return;
+    }
+
+    try {
+        const url = `${API_BASE_URL}/backtest/stored-results/${encodeURIComponent(sel.value)}/download`;
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!response.ok) {
+            setStatusText(status, 'Stored result download failed.', true);
+            return;
+        }
+
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = sel.value;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(objectUrl);
+
+        setStatusText(status, `Downloaded ${sel.value}`);
+    } catch (e) {
+        console.error('Stored result download failed:', e);
+        setStatusText(status, 'Stored result download failed.', true);
+    }
+}
+
+function renderStoredEquityCurve(labels, equityData, symbol) {
+    const ctx = document.getElementById('storedEquityChart');
+    if (!ctx) return;
+
+    // Downsample if > 500 points for performance
+    let dl = labels, dd = equityData;
+    if (equityData.length > 500) {
+        const step = Math.ceil(equityData.length / 500);
+        dl = []; dd = [];
+        for (let i = 0; i < equityData.length; i += step) {
+            dl.push(labels[i] || '');
+            dd.push(equityData[i]);
+        }
+        // Always include last point
+        if (dd[dd.length - 1] !== equityData[equityData.length - 1]) {
+            dl.push(labels[labels.length - 1] || '');
+            dd.push(equityData[equityData.length - 1]);
+        }
+    }
+
+    if (storedEquityChartInstance) {
+        storedEquityChartInstance.data.labels = dl;
+        storedEquityChartInstance.data.datasets[0].data = dd;
+        storedEquityChartInstance.data.datasets[0].label = `${symbol || 'Backtest'} Equity`;
+        storedEquityChartInstance.update('none');
+        return;
+    }
+
+    storedEquityChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: dl,
+            datasets: [{
+                label: `${symbol || 'Backtest'} Equity`,
+                data: dd,
+                borderColor: '#00ff87',
+                backgroundColor: (context) => {
+                    const chart = context.chart;
+                    const { ctx: c, chartArea } = chart;
+                    if (!chartArea) return 'transparent';
+                    const g = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+                    g.addColorStop(0, 'rgba(0, 255, 135, 0.15)');
+                    g.addColorStop(1, 'rgba(0, 255, 135, 0)');
+                    return g;
+                },
+                tension: 0.2,
+                fill: true,
+                pointRadius: 0,
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: true, labels: { color: '#94a3b8', font: { family: "'JetBrains Mono'", size: 11 } } },
+                tooltip: {
+                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                    titleColor: '#e2e8f0',
+                    bodyColor: '#94a3b8',
+                    borderColor: 'rgba(255,255,255,0.1)',
+                    borderWidth: 1,
+                    callbacks: {
+                        label: (ctx) => `Balance: $${ctx.parsed.y.toFixed(2)}`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#4a5568', maxTicksLimit: 10, font: { family: "'JetBrains Mono'", size: 9 } },
+                    grid: { color: 'rgba(255,255,255,0.03)' }
+                },
+                y: {
+                    ticks: {
+                        color: '#4a5568',
+                        font: { family: "'JetBrains Mono'", size: 10 },
+                        callback: (v) => '$' + v.toLocaleString()
+                    },
+                    grid: { color: 'rgba(255,255,255,0.03)' }
+                }
+            }
+        }
     });
 }
 
-async function loadRunResult(runId) {
-    const el = document.getElementById('runResult');
-    if (!el) return;
-    el.textContent = 'Loading result...';
+function setText(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+}
+
+// ═══════════ END STORED BACKTEST RESULTS ═══════════
+
+async function downloadOverfitProofPackage() {
+    const status = document.getElementById('btStatus');
+    const token = getToken();
+    if (!token) {
+        setStatusText(status, 'Please log in again.', true);
+        return;
+    }
+
+    setStatusText(status, 'Preparing overfit-proof ZIP...');
+    try {
+        const url = `${API_BASE_URL}/backtest/overfit-proof/download`;
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (!response.ok) {
+            setStatusText(status, 'Overfit-proof ZIP not found. Generate runs first.', true);
+            return;
+        }
+
+        const blob = await response.blob();
+        const cd = response.headers.get('content-disposition') || '';
+        let filename = 'overfit_proof_20_package.zip';
+        const m = cd.match(/filename="?([^";]+)"?/i);
+        if (m && m[1]) filename = m[1];
+
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(objectUrl);
+
+        setStatusText(status, `Downloaded ${filename}`);
+    } catch (e) {
+        console.error('Download overfit-proof package failed:', e);
+        setStatusText(status, 'Overfit-proof package download failed.', true);
+    }
+}
+
+async function downloadBotPackage() {
+    const status = document.getElementById('btStatus');
+    const token = getToken();
+    if (!token) {
+        setStatusText(status, 'Please log in again.', true);
+        return;
+    }
+
+    setStatusText(status, 'Preparing bot package ZIP...');
+    try {
+        const response = await fetch(`${API_BASE_URL}/bot/download-package`, {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (!response.ok) {
+            setStatusText(status, 'Bot package download failed.', true);
+            return;
+        }
+
+        const blob = await response.blob();
+        const cd = response.headers.get('content-disposition') || '';
+        let filename = 'zenith_bot_package.zip';
+        const m = cd.match(/filename="?([^";]+)"?/i);
+        if (m && m[1]) filename = m[1];
+
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(objectUrl);
+
+        setStatusText(status, `Downloaded ${filename}`);
+    } catch (e) {
+        console.error('Download bot package failed:', e);
+        setStatusText(status, 'Bot package download failed.', true);
+    }
+}
+
+async function loadRuns() {
+    const table = document.getElementById('runsTable');
+    if (!table) return;
+
+    const [runsData, storedData] = await Promise.all([
+        apiFetch('/backtest/runs'),
+        apiFetch('/backtest/stored-results')
+    ]);
+
+    const dbRuns = (runsData?.runs || []).map(r => ({
+        key: `run-${r.id}`,
+        source: 'Live',
+        sourceClass: 'source-live',
+        id: r.id,
+        symbol: r.symbol || '—',
+        mode: r.mode || 'standard',
+        status: r.status || 'unknown',
+        created_at: r.created_at || '',
+        isStored: false
+    }));
+
+    const storedRuns = (storedData?.results || []).map(r => ({
+        key: `stored-${r.file}`,
+        source: 'Stored',
+        sourceClass: 'source-stored',
+        id: r.file,
+        symbol: r.symbol || '—',
+        mode: r.mode || 'unknown',
+        status: 'stored',
+        created_at: r.timestamp || '',
+        isStored: true,
+        metrics: {
+            total_trades: r.total_trades,
+            win_rate: r.win_rate,
+            total_profit: r.total_profit,
+            profit_factor: r.profit_factor,
+            max_drawdown: r.max_drawdown,
+            return_pct: r.return_pct,
+            final_balance: r.final_balance
+        }
+    }));
+
+    const allRuns = [...dbRuns, ...storedRuns].sort((a, b) => {
+        const ta = new Date(a.created_at || 0).getTime() || 0;
+        const tb = new Date(b.created_at || 0).getTime() || 0;
+        return tb - ta;
+    });
+
+    const totalRunsCountEl = document.getElementById('totalRunsCount');
+    const completedRunsCountEl = document.getElementById('completedRunsCount');
+    const runningRunsCountEl = document.getElementById('runningRunsCount');
+    const bestRunPFEl = document.getElementById('bestRunPF');
+
+    const completedCount = allRuns.filter(r => ['done', 'completed', 'stored'].includes(String(r.status).toLowerCase())).length;
+    const runningCount = allRuns.filter(r => ['running', 'queued', 'pending'].includes(String(r.status).toLowerCase())).length;
+    const bestPf = storedRuns.reduce((max, r) => {
+        const pf = Number(r.metrics?.profit_factor || 0);
+        return pf > max ? pf : max;
+    }, 0);
+
+    if (totalRunsCountEl) totalRunsCountEl.textContent = String(allRuns.length);
+    if (completedRunsCountEl) completedRunsCountEl.textContent = String(completedCount);
+    if (runningRunsCountEl) runningRunsCountEl.textContent = String(runningCount);
+    if (bestRunPFEl) bestRunPFEl.textContent = bestPf > 0 ? num(bestPf, 2) : '—';
+
+    if (!allRuns.length) {
+        table.innerHTML = '<tr class="empty-state-row"><td colspan="7">No runs yet</td></tr>';
+        return;
+    }
+
+    table.innerHTML = allRuns.map(r => {
+        const prettyDate = formatRunDate(r.created_at);
+        const statusClass = getRunStatusClass(r.status);
+        const safeId = String(r.id).replace(/"/g, '&quot;');
+        return `<tr>
+            <td>${r.id}</td>
+            <td><span class="run-source-badge ${r.sourceClass}">${r.source}</span></td>
+            <td>${r.symbol}</td>
+            <td>${String(r.mode || '').replace(/_/g, ' ')}</td>
+            <td><span class="run-status-badge ${statusClass}">${r.status}</span></td>
+            <td>${prettyDate}</td>
+            <td><button class="btn btn-sm btn-outline" data-runid="${safeId}" data-stored="${r.isStored ? '1' : '0'}">View</button></td>
+        </tr>`;
+    }).join('');
+
+    table.querySelectorAll('button[data-runid]').forEach(btn => {
+        btn.addEventListener('click', () => loadRunResult(btn.dataset.runid, btn.dataset.stored === '1'));
+    });
+}
+
+function formatRunDate(value) {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    return d.toLocaleString([], {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function getRunStatusClass(status) {
+    const val = String(status || '').toLowerCase();
+    if (val === 'done' || val === 'completed' || val === 'stored') return 'status-ok';
+    if (val === 'running' || val === 'pending' || val === 'queued') return 'status-running';
+    if (val === 'failed' || val === 'error') return 'status-fail';
+    return 'status-neutral';
+}
+
+function extractPeriodRows(result) {
+    if (!result || typeof result !== 'object') return [];
+    const candidates = [];
+    const queue = [result];
+
+    while (queue.length) {
+        const node = queue.shift();
+        if (!node || typeof node !== 'object') continue;
+
+        Object.entries(node).forEach(([k, v]) => {
+            if (Array.isArray(v) && v.length && v.every(item => item && typeof item === 'object')) {
+                const looksLikePeriods = /period|window|segment|slice/i.test(k) ||
+                    v.some(item => item.period != null || item.period_id != null || item.start || item.end || item.profit != null || item.total_profit != null);
+                if (looksLikePeriods) candidates.push(v);
+            }
+            if (v && typeof v === 'object' && !Array.isArray(v)) queue.push(v);
+        });
+    }
+
+    if (!candidates.length) return [];
+    return candidates.sort((a, b) => b.length - a.length)[0].slice(0, 60);
+}
+
+function renderPeriodBreakdown(result) {
+    const rows = extractPeriodRows(result);
+    if (!rows.length) return '';
+
+    const profitableCount = rows.filter(p => Number(p.profit ?? p.total_profit ?? 0) > 0).length;
+    const tableRows = rows.map((p, idx) => {
+        const label = p.period ?? p.period_id ?? p.name ?? p.label ?? `P${idx + 1}`;
+        const trades = p.trades ?? p.total_trades ?? p.n_trades ?? '—';
+        const winRate = p.win_rate ?? p.wr ?? null;
+        const profit = Number(p.profit ?? p.total_profit ?? p.pnl ?? 0);
+        const drawdown = Number(p.max_drawdown ?? p.drawdown ?? p.dd ?? 0);
+        return `<tr>
+            <td>${label}</td>
+            <td>${trades}</td>
+            <td>${winRate == null ? '—' : `${num(winRate)}%`}</td>
+            <td class="${profit >= 0 ? 'positive' : 'negative'}">$${num(profit)}</td>
+            <td>$${num(drawdown)}</td>
+        </tr>`;
+    }).join('');
+
+    return `
+        <div class="run-periods-wrap">
+            <div class="run-periods-head">
+                <h4><i class="fas fa-layer-group"></i> Period Breakdown</h4>
+                <div class="run-periods-meta">${rows.length} periods • ${profitableCount} profitable</div>
+            </div>
+            <div class="table-scroll-wrap">
+                <table class="data-table run-periods-table">
+                    <thead>
+                        <tr><th>Period</th><th>Trades</th><th>Win Rate</th><th>Profit</th><th>Max DD</th></tr>
+                    </thead>
+                    <tbody>${tableRows}</tbody>
+                </table>
+            </div>
+        </div>`;
+}
+
+async function loadRunResult(runId, isStored = false) {
+    const panel = document.getElementById('runDetailPanel');
+    const el = document.getElementById('runDetailContent');
+    if (!panel || !el) return;
+
+    panel.style.display = 'block';
+    el.innerHTML = '<div class="empty-state-block"><div class="empty-state-title">Loading result...</div></div>';
+
+    if (isStored) {
+        const data = await apiFetch(`/backtest/stored-results/${encodeURIComponent(runId)}`);
+        if (!data) {
+            el.innerHTML = '<div class="empty-state-block"><div class="empty-state-title">Failed to load stored result</div></div>';
+            return;
+        }
+
+        const metricsPayload = {
+            mode: data.mode || 'standard',
+            metrics: data.metrics || {}
+        };
+        const periodsHtml = renderPeriodBreakdown(data);
+
+        el.innerHTML = `
+            <div class="run-detail-head">
+                <div><strong>${data.symbol || 'Stored Result'}</strong> · ${String(data.mode || 'unknown').replace(/_/g, ' ')}</div>
+                <div class="run-detail-sub">${formatRunDate(data.timestamp)} · file: ${data.file}</div>
+            </div>
+            ${renderRunResult(metricsPayload)}
+            ${periodsHtml}
+            <div class="run-detail-actions">
+                <button class="btn btn-outline btn-sm" id="downloadRunDetailBtn"><i class="fas fa-download"></i> Download JSON</button>
+            </div>
+        `;
+
+        const dlBtn = document.getElementById('downloadRunDetailBtn');
+        if (dlBtn) {
+            dlBtn.addEventListener('click', async () => {
+                const token = getToken();
+                if (!token) return;
+                const url = `${API_BASE_URL}/backtest/stored-results/${encodeURIComponent(runId)}/download`;
+                const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+                if (!resp.ok) return;
+                const blob = await resp.blob();
+                const objUrl = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = objUrl;
+                a.download = runId;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(objUrl);
+            });
+        }
+        return;
+    }
+
     const data = await apiFetch(`/backtest/results/${runId}`);
-    if (!data) return;
-    if (data.result) el.innerHTML = renderRunResult(data.result);
-    else el.textContent = data.log || data.status || 'No result yet';
+    if (!data) {
+        el.innerHTML = '<div class="empty-state-block"><div class="empty-state-title">Failed to load run result</div></div>';
+        return;
+    }
+    if (!data.result) {
+        el.innerHTML = `<div class="empty-state-block"><div class="empty-state-title">No result yet</div><div class="empty-state-desc">${data.log || data.status || 'Run is still processing.'}</div></div>`;
+        return;
+    }
+
+    el.innerHTML = `${renderRunResult(data.result)}${renderPeriodBreakdown(data.result)}`;
 }
 
 async function loadRobustness() {
@@ -1179,68 +1743,54 @@ async function exportReportPdf() {
 }
 
 async function loadMt5Status() {
-    const status = await apiFetch('/mt5/status');
-    const el = document.getElementById('mt5Status');
-    if (!el) return;
-    if (!status || !status.connected) {
-        setStatusText(el, 'Not connected');
-        return;
-    }
+    // Load bot control panel from /api/status (same endpoint)
+    const status = statusSnapshot || await apiFetch('/status');
+    if (!status) return;
 
-    if (status.login && status.server) {
-        setStatusText(el, `Connected: ${status.login} (${status.server})`);
-        return;
-    }
+    const isRunning = status.status === 'running';
+    const iconEl = document.getElementById('mt5StatusIcon');
+    const titleEl = document.getElementById('mt5StatusTitle');
+    const subEl = document.getElementById('mt5StatusSubtitle');
+    const badgeEl = document.getElementById('mt5StatusBadge');
+    const healthIcon = document.getElementById('mt5HealthIcon');
+    const healthStatus = document.getElementById('mt5HealthStatus');
 
-    if (status.runtime_connected) {
-        const runtimeLabel = status.runtime_state ? ` (${status.runtime_state})` : '';
-        setStatusText(el, `Connected via runtime${runtimeLabel}`);
-        return;
-    }
-
-    setStatusText(el, 'Connected');
-}
-
-async function connectMt5() {
-    const account_id = document.getElementById('mt5Account').value.trim();
-    const server = document.getElementById('mt5Server').value.trim();
-    const login = document.getElementById('mt5Login').value.trim();
-    const s = document.getElementById('mt5Status');
-    const btn = document.getElementById('mt5ConnectBtn');
-    
-    if (btn) {
-        btn.classList.add('is-loading');
-        btn.disabled = true;
-    }
-    
-    setStatusText(s, 'Saving connection...');
-    const r = await apiFetch('/mt5/connect', { method: 'POST', body: JSON.stringify({ account_id, server, login }) });
-    
-    if (btn) {
-        btn.classList.remove('is-loading');
-        btn.disabled = false;
-    }
-    
-    if (r && r.success) {
-        setStatusText(s, 'Connected');
-        if (btn) {
-            btn.classList.add('is-success');
-            setTimeout(() => btn?.classList.remove('is-success'), 600);
-        }
+    if (isRunning) {
+        if (iconEl) { iconEl.classList.remove('disconnected'); iconEl.classList.add('connected'); iconEl.innerHTML = '<i class="fas fa-robot"></i>'; }
+        if (titleEl) titleEl.textContent = 'Bot Running';
+        if (subEl) subEl.textContent = status.runtime_message || 'Scanning markets...';
+        if (badgeEl) { badgeEl.classList.remove('disconnected'); badgeEl.classList.add('connected'); badgeEl.innerHTML = '<span class="status-dot"></span> Online'; }
+        if (healthIcon) { healthIcon.classList.remove('warning'); healthIcon.classList.add('success'); healthIcon.innerHTML = '<i class="fas fa-check-circle"></i>'; }
+        if (healthStatus) healthStatus.textContent = 'Running';
     } else {
-        setStatusText(s, 'Connection failed', true);
-        if (btn) {
-            btn.classList.add('is-error');
-            setTimeout(() => btn?.classList.remove('is-error'), 500);
-        }
+        if (iconEl) { iconEl.classList.remove('connected'); iconEl.classList.add('disconnected'); iconEl.innerHTML = '<i class="fas fa-robot"></i>'; }
+        if (titleEl) titleEl.textContent = 'Bot Stopped';
+        if (subEl) subEl.textContent = 'Start the bot via terminal: py -3 mt5_bot/main.py';
+        if (badgeEl) { badgeEl.classList.remove('connected'); badgeEl.classList.add('disconnected'); badgeEl.innerHTML = '<span class="status-dot"></span> Offline'; }
+        if (healthIcon) { healthIcon.classList.remove('success'); healthIcon.classList.add('warning'); healthIcon.innerHTML = '<i class="fas fa-times-circle"></i>'; }
+        if (healthStatus) healthStatus.textContent = 'Stopped';
+    }
+
+    // Populate bot control detail fields
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || '\u2014'; };
+    set('botCtrlState', status.runtime_state || (isRunning ? 'running' : 'stopped'));
+    const syms = status.enabled_symbols;
+    set('botCtrlSymbols', Array.isArray(syms) && syms.length ? syms.join(', ') : '\u2014');
+    set('botCtrlPositions', status.open_positions ?? '\u2014');
+    set('botCtrlSignals', status.signals_detected ?? '\u2014');
+    set('botCtrlOpened', status.positions_opened ?? '\u2014');
+    set('botCtrlFailed', status.failed_orders ?? '\u2014');
+    set('botCtrlMessage', status.runtime_message || '\u2014');
+    if (typeof status.last_scan_age_s === 'number') {
+        set('botCtrlLastScan', status.last_scan_age_s < 60 ? `${status.last_scan_age_s}s ago` : `${Math.round(status.last_scan_age_s / 60)}m ago`);
+    } else {
+        set('botCtrlLastScan', '\u2014');
     }
 }
 
-async function disconnectMt5() {
-    const s = document.getElementById('mt5Status');
-    await apiFetch('/mt5/disconnect', { method: 'POST' });
-    setStatusText(s, 'Disconnected');
-}
+// Legacy stubs — MT5 connect/disconnect removed (bot runs independently)
+async function connectMt5() {}
+async function disconnectMt5() {}
 
 function renderBotSymbols(cfg) {
     const grid = document.getElementById('botSymbolsGrid');
@@ -1491,7 +2041,7 @@ function initEvents() {
         setTimeout(() => btn.querySelector('i').classList.remove('fa-spin'), 700);
     });
 
-    bind('startStopBtn', handleStartStop);
+    bind('downloadBotPackageBtnTop', downloadBotPackage);
     bind('runBacktestBtn', () => {
         if (btRunInProgress) return;
         runBacktest();
@@ -1501,6 +2051,10 @@ function initEvents() {
     bind('mt5ConnectBtn', connectMt5);
     bind('mt5DisconnectBtn', disconnectMt5);
     bind('runMonteCarloBtn', runMonteCarlo);
+    bind('runRobustness20Btn', runRobustness20);
+    bind('downloadPresentationBtn', downloadPresentationPackage);
+    bind('downloadOverfitProofBtn', downloadOverfitProofPackage);
+    bind('downloadBotPackageBtn', downloadBotPackage);
     bind('logoutBtn', logout);
     bind('saveBotRiskBtn', saveBotRisk);
     bind('saveBotGuardsBtn', saveBotGuards);

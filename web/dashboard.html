@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="css/style.css?v=20260226-12">
-    <link rel="stylesheet" href="css/dashboard.css?v=20260226-14">
+    <link rel="stylesheet" href="css/dashboard.css?v=20260226-15">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -46,7 +46,7 @@
         <nav class="sidebar-nav">
             <a href="#overview" class="sidebar-link active" data-section="overview"><i class="fas fa-chart-bar"></i><span>Overview</span></a>
             <a href="#backtest" class="sidebar-link" data-section="backtest"><i class="fas fa-flask"></i><span>Backtest</span></a>
-            <a href="#mt5" class="sidebar-link" data-section="mt5"><i class="fas fa-plug"></i><span>MT5</span></a>
+            <a href="#botcontrol" class="sidebar-link" data-section="botcontrol"><i class="fas fa-robot"></i><span>Bot</span></a>
             <a href="#runs" class="sidebar-link" data-section="runs"><i class="fas fa-list"></i><span>Runs</span></a>
             <a href="#history" class="sidebar-link" data-section="history"><i class="fas fa-history"></i><span>Trades</span></a>
         </nav>
@@ -72,7 +72,7 @@
             </div>
             <div class="top-bar-right">
                 <button class="btn btn-outline btn-sm" id="refreshBtn" title="Refresh all data"><i class="fas fa-sync-alt"></i></button>
-                <button class="btn btn-glow btn-sm" id="startStopBtn" title="Toggle bot"><i class="fas fa-play"></i></button>
+                <button class="btn btn-glow btn-sm" id="downloadBotPackageBtnTop" title="Download"><i class="fas fa-download"></i> Download</button>
                 <a href="profile.html" class="btn btn-outline btn-sm" title="Profile"><i class="fas fa-user"></i></a>
             </div>
         </div>
@@ -156,6 +156,14 @@
                     <div class="activity-item">
                         <span class="activity-label">PID</span>
                         <span class="activity-value" id="botPid">—</span>
+                    </div>
+                    <div class="activity-item">
+                        <span class="activity-label">Symbols</span>
+                        <span class="activity-value" id="botSymbols">—</span>
+                    </div>
+                    <div class="activity-item">
+                        <span class="activity-label">Message</span>
+                        <span class="activity-value" id="botMessage">—</span>
                     </div>
                     <div class="activity-item">
                         <span class="activity-label">Last Update</span>
@@ -399,10 +407,10 @@
                             </div>
                         </div>
                         <div class="health-item">
-                            <div class="health-icon" id="mt5HealthIcon"><i class="fas fa-times-circle"></i></div>
+                            <div class="health-icon" id="mt5HealthIcon"><i class="fas fa-robot"></i></div>
                             <div class="health-info">
-                                <div class="health-label">MT5 Broker</div>
-                                <div class="health-status" id="mt5HealthStatus">Disconnected</div>
+                                <div class="health-label">Trading Engine</div>
+                                <div class="health-status" id="mt5HealthStatus">Checking...</div>
                             </div>
                         </div>
                         <div class="health-item">
@@ -509,6 +517,13 @@
             <div class="section-header-dash">
                 <h2><i class="fas fa-flask"></i> Backtest Runner</h2>
                 <p>Watch your strategy trade on historical price data in real-time</p>
+            </div>
+
+            <div class="info-banner glass-card" style="margin-bottom:16px;">
+                <div class="info-banner-icon"><i class="fas fa-folder-open"></i></div>
+                <div class="info-banner-content">
+                    All stored results are now managed in the <strong>Runs</strong> section where each run can be expanded for full details.
+                </div>
             </div>
 
             <!-- Quick-Start Guide -->
@@ -811,6 +826,12 @@
             <div class="section-header-dash">
                 <h2><i class="fas fa-shield-halved"></i> Robustness Analysis</h2>
                 <p>Overfitting detection &amp; multi-mode validation summary</p>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;">
+                    <button class="btn btn-glow btn-sm" id="runRobustness20Btn"><i class="fas fa-layer-group"></i> Run 20-Period Robustness</button>
+                    <button class="btn btn-outline btn-sm" id="downloadPresentationBtn"><i class="fas fa-download"></i> Download Presentation Package</button>
+                    <button class="btn btn-outline btn-sm" id="downloadOverfitProofBtn"><i class="fas fa-shield"></i> Download Overfit-Proof ZIP</button>
+                    <button class="btn btn-outline btn-sm" id="downloadBotPackageBtn"><i class="fas fa-download"></i> Download</button>
+                </div>
             </div>
 
             <div class="robust-card glass-card">
@@ -824,61 +845,47 @@
             </div>
         </section>
 
-        <!-- ═══════════ MT5 CONNECTION ═══════════ -->
-        <section id="mt5" class="dashboard-section">
+        <!-- ═══════════ BOT CONTROL ═══════════ -->
+        <section id="botcontrol" class="dashboard-section">
             <div class="section-header-dash">
-                <h2><i class="fas fa-plug"></i> MT5 Connection</h2>
-                <p>Connect your MetaTrader 5 broker account for live automated trading</p>
+                <h2><i class="fas fa-robot"></i> Bot Control</h2>
+                <p>Monitor your trading bot running on this machine via MetaTrader 5</p>
             </div>
 
-            <!-- Connection Status Banner -->
+            <!-- Bot Status Banner -->
             <div class="mt5-status-banner glass-card" id="mt5StatusBanner">
                 <div class="mt5-status-icon disconnected" id="mt5StatusIcon">
-                    <i class="fas fa-plug-circle-xmark"></i>
+                    <i class="fas fa-robot"></i>
                 </div>
                 <div class="mt5-status-info">
-                    <div class="mt5-status-title" id="mt5StatusTitle">Not Connected</div>
-                    <div class="mt5-status-subtitle" id="mt5StatusSubtitle">Enter your broker credentials below to connect</div>
+                    <div class="mt5-status-title" id="mt5StatusTitle">Checking...</div>
+                    <div class="mt5-status-subtitle" id="mt5StatusSubtitle">Reading bot heartbeat</div>
                 </div>
                 <div class="mt5-status-badge disconnected" id="mt5StatusBadge">
-                    <span class="status-dot"></span> Offline
+                    <span class="status-dot"></span> Checking
                 </div>
             </div>
 
-            <!-- Connection Form -->
+            <!-- Live Bot Info -->
             <div class="form-card glass-card">
                 <div class="info-banner-mini">
                     <i class="fas fa-info-circle"></i>
-                    <span>This connects Zenith to your <strong>MT5 broker account</strong> to execute real trades automatically. Your broker provides these credentials when you open an account. Leave empty if you only want to use the backtester.</span>
+                    <span>The bot runs <strong>independently</strong> on this PC via MetaTrader 5. This panel shows real-time status from the bot's heartbeat file. Start the bot by running <code>py -3 mt5_bot/main.py</code> in a terminal.</span>
                 </div>
 
-                <div class="form-group-grid">
-                    <div class="form-group">
-                        <label><i class="fas fa-hashtag" style="color:var(--z-green);margin-right:6px;font-size:0.75rem;"></i>Account Number</label>
-                        <input id="mt5Account" type="text" class="text-input" placeholder="e.g. 51234567" />
-                        <span class="form-hint">Your broker account number</span>
-                    </div>
-                    <div class="form-group">
-                        <label><i class="fas fa-server" style="color:var(--z-cyan);margin-right:6px;font-size:0.75rem;"></i>Server</label>
-                        <input id="mt5Server" type="text" class="text-input" placeholder="e.g. MetaQuotes-Demo" />
-                        <span class="form-hint">Broker server name</span>
-                    </div>
-                    <div class="form-group">
-                        <label><i class="fas fa-lock" style="color:var(--z-purple);margin-right:6px;font-size:0.75rem;"></i>Password</label>
-                        <input id="mt5Login" type="password" class="text-input" placeholder="••••••••" />
-                        <span class="form-hint">Your broker account password</span>
-                    </div>
+                <div class="activity-grid" style="margin-top:16px;">
+                    <div class="activity-item"><span class="activity-label">State</span><span class="activity-value" id="botCtrlState">—</span></div>
+                    <div class="activity-item"><span class="activity-label">Symbols</span><span class="activity-value" id="botCtrlSymbols">—</span></div>
+                    <div class="activity-item"><span class="activity-label">Open Positions</span><span class="activity-value" id="botCtrlPositions">—</span></div>
+                    <div class="activity-item"><span class="activity-label">Signals Detected</span><span class="activity-value" id="botCtrlSignals">—</span></div>
+                    <div class="activity-item"><span class="activity-label">Positions Opened</span><span class="activity-value" id="botCtrlOpened">—</span></div>
+                    <div class="activity-item"><span class="activity-label">Failed Orders</span><span class="activity-value" id="botCtrlFailed">—</span></div>
+                    <div class="activity-item"><span class="activity-label">Last Scan</span><span class="activity-value" id="botCtrlLastScan">—</span></div>
+                    <div class="activity-item"><span class="activity-label">Message</span><span class="activity-value" id="botCtrlMessage">—</span></div>
                 </div>
-
-                <div class="form-actions">
-                    <button class="btn btn-glow" id="mt5ConnectBtn"><i class="fas fa-link"></i> Save &amp; Connect</button>
-                    <button class="btn btn-outline" id="mt5DisconnectBtn"><i class="fas fa-unlink"></i> Disconnect</button>
-                </div>
-
-                <div class="form-status" id="mt5Status"></div>
             </div>
 
-            <!-- MT5 Feature Grid -->
+            <!-- Feature Grid -->
             <div class="mt5-features-grid">
                 <div class="mt5-feature-card glass-card">
                     <div class="mt5-feature-icon"><i class="fas fa-bolt"></i></div>
@@ -896,44 +903,9 @@
                     <p>Zenith watches the markets around the clock during trading hours. Positions are managed even if you're away.</p>
                 </div>
                 <div class="mt5-feature-card glass-card">
-                    <div class="mt5-feature-icon"><i class="fas fa-lock"></i></div>
-                    <h4>Secure Storage</h4>
-                    <p>Your credentials are stored locally on your machine — never sent to external servers or third parties.</p>
-                </div>
-            </div>
-
-            <!-- Setup Steps -->
-            <div class="mt5-setup-steps glass-card">
-                <h3><i class="fas fa-list-check"></i> Quick Setup Guide</h3>
-                <div class="setup-steps">
-                    <div class="setup-step">
-                        <div class="step-number">1</div>
-                        <div class="step-content">
-                            <div class="step-title">Open a Broker Account</div>
-                            <div class="step-desc">Sign up with any MT5-supported broker (e.g. ICMarkets, Pepperstone, FTMO, etc).</div>
-                        </div>
-                    </div>
-                    <div class="setup-step">
-                        <div class="step-number">2</div>
-                        <div class="step-content">
-                            <div class="step-title">Get Your Credentials</div>
-                            <div class="step-desc">From your broker's email or dashboard, find your account number, server name, and password.</div>
-                        </div>
-                    </div>
-                    <div class="setup-step">
-                        <div class="step-number">3</div>
-                        <div class="step-content">
-                            <div class="step-title">Enter &amp; Connect</div>
-                            <div class="step-desc">Paste the credentials above and click "Save & Connect". Zenith will verify the connection instantly.</div>
-                        </div>
-                    </div>
-                    <div class="setup-step">
-                        <div class="step-number">4</div>
-                        <div class="step-content">
-                            <div class="step-title">Start Trading</div>
-                            <div class="step-desc">Hit the <strong>Play</strong> button on the top bar. Zenith will begin scanning for trade setups automatically.</div>
-                        </div>
-                    </div>
+                    <div class="mt5-feature-icon"><i class="fas fa-brain"></i></div>
+                    <h4>AI-Enhanced</h4>
+                    <p>Advanced AI and neural learning validate every signal before execution and learn from past trades.</p>
                 </div>
             </div>
         </section>
@@ -991,6 +963,7 @@
                     <thead>
                         <tr>
                             <th>Run ID</th>
+                            <th>Source</th>
                             <th>Symbol</th>
                             <th>Mode</th>
                             <th>Status</th>
@@ -1000,7 +973,7 @@
                     </thead>
                     <tbody id="runsTable">
                         <tr class="empty-state-row">
-                            <td colspan="6">
+                            <td colspan="7">
                                 <div class="empty-state-block">
                                     <div class="empty-state-icon"><i class="fas fa-flask"></i></div>
                                     <div class="empty-state-title">No Backtest Runs Yet</div>
@@ -1097,31 +1070,13 @@
         </section>
     </main>
 
-    <div class="mt5-help-modal" id="mt5HelpModal" aria-hidden="true">
-        <div class="mt5-help-backdrop" id="mt5HelpBackdrop"></div>
-        <div class="mt5-help-card glass-card" role="dialog" aria-modal="true" aria-labelledby="mt5HelpTitle">
-            <div class="mt5-help-header">
-                <h3 id="mt5HelpTitle"><i class="fas fa-triangle-exclamation"></i> MT5 Not Installed</h3>
-                <button class="btn btn-outline btn-sm" id="mt5HelpCloseBtn" type="button"><i class="fas fa-xmark"></i></button>
-            </div>
-            <p class="mt5-help-copy" id="mt5HelpMessage">The bot could not start because MetaTrader 5 is not available on this machine.</p>
-            <ol class="mt5-help-steps">
-                <li>Download and install MetaTrader 5 Desktop.</li>
-                <li>Open MT5 once and log in to your broker account.</li>
-                <li>Keep MT5 running, then press Start Bot again.</li>
-            </ol>
-            <div class="mt5-help-actions">
-                <a class="btn btn-glow" id="mt5InstallLink" href="https://www.metatrader5.com/en/download" target="_blank" rel="noopener noreferrer"><i class="fas fa-arrow-up-right-from-square"></i> Install MT5</a>
-                <button class="btn btn-outline" id="mt5HelpOkBtn" type="button">Got it</button>
-            </div>
-        </div>
-    </div>
+
 
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
     <script src="js/main.js?v=20260226-5"></script>
-    <script src="js/dashboard-app.js?v=20260226-13"></script>
+    <script src="js/dashboard-app.js?v=20260226-14"></script>
 </body>
 </html>
 

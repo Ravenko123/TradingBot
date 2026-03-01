@@ -81,11 +81,10 @@ def fetch_data(symbol: str, bars: int = 10000) -> Optional[pd.DataFrame]:
         try:
             if mt5.initialize():
                 req = f"{symbol}+" if symbol in FOREX_PLUS else symbol
-                rates = mt5.copy_rates_from_pos(req, mt5.TIMEFRAME_M5, 0, bars)
-                if rates is None or len(rates) < bars * 0.5:
-                    rates = mt5.copy_rates_from_pos(req, mt5.TIMEFRAME_M15, 0, bars // 3)
+                # Use M15 as primary timeframe — strategy params calibrated for 15-min bars
+                rates = mt5.copy_rates_from_pos(req, mt5.TIMEFRAME_M15, 0, bars)
                 if rates is None or len(rates) < bars * 0.25:
-                    rates = mt5.copy_rates_from_pos(req, mt5.TIMEFRAME_H1, 0, bars // 12)
+                    rates = mt5.copy_rates_from_pos(req, mt5.TIMEFRAME_H1, 0, bars // 4)
                 mt5.shutdown()
                 if rates is not None and len(rates) >= 300:
                     df = pd.DataFrame(rates)
@@ -223,6 +222,10 @@ def add_indicators(df, ema_period=50, atr_period=14, adx_period=14):
 
     if 'Time' in df.columns and not np.issubdtype(df['Time'].dtype, np.datetime64):
         df['Time'] = pd.to_datetime(df['Time'])
+    df['EMA_H1'] = cs.rolling(12).mean().fillna(method='bfill').values  # 12x M5 = 1hr
+    df['EMA_8'] = cs.ewm(span=8, adjust=False).mean().fillna(method='bfill').values
+    df['EMA_21'] = cs.ewm(span=21, adjust=False).mean().fillna(method='bfill').values
+    df['EMA_34'] = cs.ewm(span=34, adjust=False).mean().fillna(method='bfill').values
     return df
 
 
@@ -338,7 +341,7 @@ def run_backtest_no_lookahead(
     df: pd.DataFrame,
     symbol: str,
     params: Optional[Tuple] = None,
-    risk_pct: float = 1.0,
+    risk_pct: float = 10.0,
 ) -> Dict:
     """
     ICT/SMC backtest — strict no-lookahead.
@@ -495,26 +498,18 @@ def run_backtest_no_lookahead(
             held += 1
             bh = H[i]; bl = L[i]
 
-            ir = abs(e_price - init_sl)
-            if ir > 0:
-                fav = (bh - e_price) if dirn == 1 else (e_price - bl)
-
-                # Trailing stop after 1.5 R (lock gains)
-                if fav >= ir * 1.5 and ATR[i] > 0:
-                    trail = ATR[i] * 1.0
-                    if dirn == 1:
-                        sl_price = max(sl_price, bh - trail)
-                    else:
-                        sl_price = min(sl_price, bl + trail)
-
-            # Exit checks
+            # ── Exit checks — clean SL/TP, no early trailing ──
             ex = False; ep = C[i]; er = 'Time'
             if dirn == 1:
-                if bl <= sl_price: ex=True; ep=sl_price; er='SL'
-                elif bh >= tp_price: ex=True; ep=tp_price; er='TP'
+                if bh >= tp_price:
+                    ex = True; ep = tp_price; er = 'TP'
+                elif bl <= sl_price:
+                    ex = True; ep = sl_price; er = 'SL'
             else:
-                if bh >= sl_price: ex=True; ep=sl_price; er='SL'
-                elif bl <= tp_price: ex=True; ep=tp_price; er='TP'
+                if bl <= tp_price:
+                    ex = True; ep = tp_price; er = 'TP'
+                elif bh >= sl_price:
+                    ex = True; ep = sl_price; er = 'SL'
 
             mh = 120 if symbol in ('BTCUSD','NAS100') else 96
             if not ex and held >= mh:
@@ -528,6 +523,9 @@ def run_backtest_no_lookahead(
                 sc = (spr_p / sd) * ra if sd > 0 else 0.0
                 pnl = float(gp - sc)
                 bal += pnl; eq.append(bal)
+                # Cooldown after loss
+                if pnl < 0:
+                    last_loss = p
                 trades.append({
                     'entry_time': times.iloc[e_idx], 'exit_time': times.iloc[i],
                     'direction': 'BUY' if dirn==1 else 'SELL',
@@ -573,72 +571,39 @@ def run_backtest_no_lookahead(
         if td and dtc.get(td, 0) >= md:
             continue
 
-        # RSI extremes
-        if RSI[p] > 75 or RSI[p] < 25:
-            continue
-
-        # ── Trend from EMA ──
-        ema_trend = 0
-        if C[p] > EMA[p] and EMAF[p] > EMA[p]:
-            ema_trend = 1
-        elif C[p] < EMA[p] and EMAF[p] < EMA[p]:
-            ema_trend = -1
-        if ema_trend == 0:
-            continue
-
-        # ── Premium / Discount zone ──
-        lb = max(0, p - RANGE_BARS)
-        rng_hi = np.max(H[lb:p+1])
-        rng_lo = np.min(L[lb:p+1])
-        rng_mid = (rng_hi + rng_lo) / 2.0
-        # Longs only if price is in discount (lower 55%), shorts in premium
-        if ema_trend == 1 and C[p] > rng_lo + (rng_hi - rng_lo) * 0.65:
-            continue
-        if ema_trend == -1 and C[p] < rng_hi - (rng_hi - rng_lo) * 0.65:
-            continue
-
+        # --- ICT/SMC: OB, FVG, or sweep entries independently ---
         sig = 0
-
-        # ─── ENTRY 1: Order Block Retest ───
+        # Order Block retest
         for ob in obs:
             if not ob['ok']:
                 continue
-            if ob['d'] == 1 and ema_trend == 1 and struct >= 0:
-                # Price dipped into demand OB
+            if ob['d'] == 1 and struct >= 0:
                 if L[p] <= ob['hi'] and C[p] >= ob['lo']:
                     if is_rejection_candle(O[p], H[p], L[p], C[p], 1):
                         sig = 1; ob['ok'] = False; break
-            elif ob['d'] == -1 and ema_trend == -1 and struct <= 0:
+            elif ob['d'] == -1 and struct <= 0:
                 if H[p] >= ob['lo'] and C[p] <= ob['hi']:
                     if is_rejection_candle(O[p], H[p], L[p], C[p], -1):
                         sig = -1; ob['ok'] = False; break
-
-        # ─── ENTRY 2: Fair Value Gap Fill ───
+        # FVG fill
         if sig == 0:
             for fi in range(len(fvgs)):
                 fv = fvgs[fi]
-                if fv['d'] == 1 and ema_trend == 1 and struct >= 0:
+                if fv['d'] == 1 and struct >= 0:
                     if L[p] <= fv['hi'] and C[p] > fv['lo'] and C[p] > O[p]:
                         sig = 1; fvgs.pop(fi); break
-                elif fv['d'] == -1 and ema_trend == -1 and struct <= 0:
+                elif fv['d'] == -1 and struct <= 0:
                     if H[p] >= fv['lo'] and C[p] < fv['hi'] and C[p] < O[p]:
                         sig = -1; fvgs.pop(fi); break
-
-        # ─── ENTRY 3: Liquidity Sweep ───
-        if sig == 0 and ema_trend == 1 and r_sl:
+        # Sweep reversal
+        if sig == 0 and r_sl:
             for si, sv in r_sl[-4:]:
-                lk = ('s', si)
-                if lk in used_sweeps: continue
-                if L[p] < sv and C[p] > sv and C[p] > O[p]:
-                    sig = 1; used_sweeps.add(lk); break
-
-        if sig == 0 and ema_trend == -1 and r_sh:
+                if L[p] < sv and (C[p] > L[p] + (H[p]-L[p])*0.5):
+                    sig = 1; break
+        if sig == 0 and r_sh:
             for si, sv in r_sh[-4:]:
-                lk = ('h', si)
-                if lk in used_sweeps: continue
-                if H[p] > sv and C[p] < sv and C[p] < O[p]:
-                    sig = -1; used_sweeps.add(lk); break
-
+                if H[p] > sv and (C[p] < H[p] - (H[p]-L[p])*0.5):
+                    sig = -1; break
         if sig == 0:
             continue
 
@@ -715,6 +680,97 @@ def walk_forward_analysis(symbol, total_days=180, train_days=60, test_days=30):
             'profitable_periods':pr,'consistency':pr/len(results)*100,
             'average_profit_per_period':float(np.mean([float(r.get('total_profit',0)) for r in results])),
             'periods':results}
+
+
+def run_robustness_20_periods(df, symbol, periods=20, risk_pct=1.0):
+    """Run rolling robustness test across N contiguous periods on one dataset."""
+    if df is None or len(df) < 300:
+        return {
+            'symbol': symbol,
+            'mode': 'robustness_20',
+            'periods_requested': int(periods),
+            'periods_run': 0,
+            'profitable_periods': 0,
+            'consistency': 0.0,
+            'average_return_pct': 0.0,
+            'worst_period_return_pct': 0.0,
+            'worst_period_drawdown': 0.0,
+            'combined_equity_curve': [INITIAL_BALANCE],
+            'period_results': [],
+        }
+
+    n = len(df)
+    max_periods = max(1, n // 160)
+    use_periods = max(1, min(int(periods), max_periods))
+    block = max(120, n // use_periods)
+
+    rows = []
+    combined_equity = [INITIAL_BALANCE]
+    combined_balance = INITIAL_BALANCE
+
+    for p in range(use_periods):
+        start = p * block
+        end = (p + 1) * block if p < use_periods - 1 else n
+        if end - start < 120:
+            continue
+
+        seg = df.iloc[start:end].copy().reset_index(drop=True)
+        bt = run_backtest_no_lookahead(seg, symbol, risk_pct=risk_pct)
+        m = bt.get('metrics', {})
+        eq = bt.get('equity_curve', []) or [INITIAL_BALANCE]
+
+        start_time = None
+        end_time = None
+        if 'Time' in seg.columns and len(seg) > 0:
+            start_time = str(pd.Timestamp(seg['Time'].iloc[0]))
+            end_time = str(pd.Timestamp(seg['Time'].iloc[-1]))
+
+        period_profit = float(m.get('total_profit', 0.0) or 0.0)
+        for v in eq[1:]:
+            combined_equity.append(float(combined_balance + (float(v) - INITIAL_BALANCE)))
+        combined_balance += period_profit
+
+        rows.append({
+            'period_index': int(p + 1),
+            'bars': int(len(seg)),
+            'start_time': start_time,
+            'end_time': end_time,
+            'metrics': m,
+            'equity_curve': [float(x) for x in eq],
+        })
+
+    if not rows:
+        return {
+            'symbol': symbol,
+            'mode': 'robustness_20',
+            'periods_requested': int(periods),
+            'periods_run': 0,
+            'profitable_periods': 0,
+            'consistency': 0.0,
+            'average_return_pct': 0.0,
+            'worst_period_return_pct': 0.0,
+            'worst_period_drawdown': 0.0,
+            'combined_equity_curve': [INITIAL_BALANCE],
+            'period_results': [],
+        }
+
+    returns = [float(r['metrics'].get('return_pct', 0.0) or 0.0) for r in rows]
+    dds = [float(r['metrics'].get('max_drawdown', 0.0) or 0.0) for r in rows]
+    profitable = sum(1 for r in returns if r > 0)
+
+    return {
+        'symbol': symbol,
+        'mode': 'robustness_20',
+        'periods_requested': int(periods),
+        'periods_run': int(len(rows)),
+        'profitable_periods': int(profitable),
+        'consistency': float(profitable / len(rows) * 100.0),
+        'average_return_pct': float(np.mean(returns)),
+        'worst_period_return_pct': float(np.min(returns)),
+        'worst_period_drawdown': float(np.max(dds)) if dds else 0.0,
+        'combined_equity_curve': [float(x) for x in combined_equity],
+        'period_results': rows,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -845,42 +901,93 @@ def main():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def run_cli_backtest_mode():
-    ap = argparse.ArgumentParser(description='ICT/SMC Backtest Engine v2')
-    ap.add_argument('--symbol', default='EURUSD')
-    ap.add_argument('--mode', choices=['standard','walk_forward','split','monte_carlo'], default='standard')
-    ap.add_argument('--split-ratio', type=float, default=0.7)
-    ap.add_argument('--mc-iterations', type=int, default=200)
-    ap.add_argument('--run-id', default=None)
-    ap.add_argument('--output', default=None)
-    ap.add_argument('--walk-forward', action='store_true')
+    ap = argparse.ArgumentParser(description='ICT/SMC Backtest Engine — Manual Mode')
+    ap.add_argument('--symbol', default='EURUSD', help='Symbol to backtest')
+    ap.add_argument('--mode', default='standard',
+                    choices=['standard', 'split', 'walk_forward', 'monte_carlo', 'robustness_20'],
+                    help='Backtest mode')
+    ap.add_argument('--ema', type=int, default=50, help='EMA period')
+    ap.add_argument('--adx', type=float, default=20.0, help='ADX minimum')
+    ap.add_argument('--sl_mult', type=float, default=1.5, help='ATR stop multiplier')
+    ap.add_argument('--rr', type=float, default=2.0, help='Reward/Risk target')
+    ap.add_argument('--risk_pct', type=float, default=2.0, help='Risk percent per trade')
+    ap.add_argument('--split-ratio', type=float, default=0.7, help='Train/test split ratio for split mode')
+    ap.add_argument('--mc-iterations', type=int, default=200, help='Monte Carlo iterations')
+    ap.add_argument('--periods', type=int, default=20, help='Number of robustness periods for robustness_20 mode')
+    ap.add_argument('--bars', type=int, default=10000, help='Bars to request from MT5 for data-driven modes')
+    ap.add_argument('--run-id', default=None, help='Optional run id for API integration')
+    ap.add_argument('--output', default=None, help='Output file (JSON)')
     a = ap.parse_args()
-    mode = 'walk_forward' if a.walk_forward else a.mode
     sym = str(a.symbol or 'EURUSD').upper()
 
-    if mode == 'walk_forward':
-        r = walk_forward_analysis(sym)
-        pay = build_output_payload(sym, mode, r)
-    else:
-        df = fetch_data(sym, 10000)
-        if df is None or len(df) < 120:
-            pay = build_output_payload(sym, mode, {'metrics':{},'trades':[],'error':'Not enough data'})
-        elif mode == 'split':
-            r = run_split_backtest(df, sym, float(a.split_ratio))
-            pay = build_output_payload(sym, mode, r)
-        else:
-            std = run_backtest_no_lookahead(df, sym)
-            if mode == 'monte_carlo':
-                mc = monte_carlo_analysis(std.get('trades',[]), int(a.mc_iterations))
-                pay = build_output_payload(sym, mode, {'standard':std,'monte_carlo':mc})
-            else:
-                pay = build_output_payload(sym, mode, std)
+    params = (a.ema, a.adx, a.sl_mult, a.rr)
+    mode = str(a.mode or 'standard').lower()
+    bars = max(1200, int(a.bars))
+    df = fetch_data(sym, bars)
+    if df is None or len(df) < 120:
+        print(f"Not enough data for {sym}"); return 1
 
-    out = Path(a.output) if a.output else DATA_DIR / f"{a.run_id or (sym+'_'+mode)}.json"
-    save_output(pay, out); return 0
+    if mode == 'split':
+        result = run_split_backtest(df, sym, split_ratio=float(a.split_ratio), risk_pct=float(a.risk_pct))
+        result['mode'] = 'split'
+        metrics = result.get('test', {}).get('metrics', {})
+    elif mode == 'walk_forward':
+        result = walk_forward_analysis(sym)
+        result['mode'] = 'walk_forward'
+        metrics = {
+            'total_trades': result.get('total_periods', 0),
+            'win_rate': result.get('consistency', 0.0),
+            'profit_factor': 0.0,
+            'return_pct': 0.0,
+            'max_drawdown': 0.0,
+        }
+    elif mode == 'monte_carlo':
+        standard = run_backtest_no_lookahead(df, sym, params=params, risk_pct=a.risk_pct)
+        mc = monte_carlo_analysis(standard.get('trades', []), iterations=max(20, int(a.mc_iterations)))
+        result = {
+            'symbol': sym,
+            'mode': 'monte_carlo',
+            'standard': standard,
+            'monte_carlo': mc,
+        }
+        metrics = standard.get('metrics', {})
+    elif mode == 'robustness_20':
+        result = run_robustness_20_periods(df, sym, periods=max(2, int(a.periods)), risk_pct=float(a.risk_pct))
+        metrics = {
+            'total_trades': result.get('periods_run', 0),
+            'win_rate': result.get('consistency', 0.0),
+            'profit_factor': 0.0,
+            'return_pct': result.get('average_return_pct', 0.0),
+            'max_drawdown': result.get('worst_period_drawdown', 0.0),
+        }
+    else:
+        result = run_backtest_no_lookahead(df, sym, params=params, risk_pct=a.risk_pct)
+        result['mode'] = 'standard'
+        metrics = result.get('metrics', {})
+
+    print(
+        f"\n{sym} [{mode}]  "
+        f"Trades={metrics.get('total_trades',0)}  "
+        f"WR={metrics.get('win_rate',0):.1f}%  "
+        f"PF={metrics.get('profit_factor',0):.2f}  "
+        f"Return={metrics.get('return_pct',0):+.1f}%  "
+        f"DD=${metrics.get('max_drawdown',0):.0f}"
+    )
+
+    if a.run_id and isinstance(result, dict):
+        result['run_id'] = str(a.run_id)
+
+    if a.output:
+        Path(a.output).write_text(json.dumps(result, indent=2, default=str))
+        print(f"Saved to {a.output}")
+    return 0
 
 
 if __name__ == '__main__':
-    cli = {'--symbol','--mode','--split-ratio','--mc-iterations','--run-id','--output','--walk-forward'}
+    cli = {
+        '--symbol', '--mode', '--ema', '--adx', '--sl_mult', '--rr', '--risk_pct', '--output',
+        '--split-ratio', '--mc-iterations', '--periods', '--bars', '--run-id'
+    }
     if any(a in sys.argv for a in cli):
         raise SystemExit(run_cli_backtest_mode())
     main()

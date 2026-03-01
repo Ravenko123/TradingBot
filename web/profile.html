@@ -8,7 +8,7 @@
     <link rel="shortcut icon" href="/favicon.svg?v=20260225-2">
     <link rel="apple-touch-icon" href="/favicon.svg?v=20260225-2">
     <link rel="stylesheet" href="css/style.css?v=20260226-5">
-    <link rel="stylesheet" href="css/dashboard.css?v=20260224-18">
+    <link rel="stylesheet" href="css/dashboard.css?v=20260226-15">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -52,7 +52,7 @@
         <div class="top-bar glass-card">
             <div class="top-bar-left">
                 <h1>Profile</h1>
-                <span class="section-timestamp">Manage your account</span>
+                <span class="section-timestamp">Manage your account settings</span>
             </div>
             <div class="top-bar-right">
                 <a href="dashboard.html" class="btn btn-outline btn-sm" title="Back to dashboard"><i class="fas fa-arrow-left"></i></a>
@@ -60,13 +60,17 @@
         </div>
 
         <!-- Profile Section -->
-        <section class="dashboard-section">
+        <section class="dashboard-section active">
             <div class="profile-grid">
                 <!-- User Info Card -->
                 <div class="profile-card glass-card reveal-up">
                     <div class="card-glow"></div>
                     <h2><i class="fas fa-user-circle"></i> Account Information</h2>
                     <div class="profile-info">
+                        <div class="info-row">
+                            <span class="info-label">Name</span>
+                            <span class="info-value" id="profileName">User</span>
+                        </div>
                         <div class="info-row">
                             <span class="info-label">Email</span>
                             <span class="info-value" id="profileEmail">user@example.com</span>
@@ -96,6 +100,10 @@
                             <span class="stat-value" id="statBacktests">0</span>
                         </div>
                         <div class="stat-row">
+                            <span class="stat-label">Stored Results</span>
+                            <span class="stat-value" id="statStored">0</span>
+                        </div>
+                        <div class="stat-row">
                             <span class="stat-label">Total Trades</span>
                             <span class="stat-value" id="statTrades">0</span>
                         </div>
@@ -107,26 +115,32 @@
                             <span class="stat-label">Total P&L</span>
                             <span class="stat-value" id="statPnL">$0</span>
                         </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Best Result File</span>
+                            <span class="stat-value" id="statBestResult">—</span>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Preferences Card -->
                 <div class="profile-card glass-card reveal-up" data-delay="200">
                     <div class="card-glow"></div>
-                    <h2><i class="fas fa-cog"></i> Settings</h2>
+                    <h2><i class="fas fa-cog"></i> Preferences</h2>
                     <div class="settings-group">
                         <label class="setting-item">
-                            <input type="checkbox" checked disabled />
-                            <span>Email Notifications</span>
+                            <input type="checkbox" id="prefEmailNotifications" checked />
+                            <span>Email notifications</span>
                         </label>
                         <label class="setting-item">
-                            <input type="checkbox" checked disabled />
-                            <span>Trade Alerts</span>
+                            <input type="checkbox" id="prefTradeAlerts" checked />
+                            <span>Trade alerts</span>
                         </label>
                         <label class="setting-item">
-                            <input type="checkbox" disabled />
-                            <span>Dark Mode</span>
+                            <input type="checkbox" id="prefCompactDashboard" />
+                            <span>Compact dashboard mode</span>
                         </label>
+                        <button class="btn btn-outline" id="savePrefsBtn"><i class="fas fa-save"></i> Save Preferences</button>
+                        <div class="form-status" id="prefsStatus"></div>
                     </div>
                 </div>
 
@@ -138,6 +152,22 @@
                     <button class="btn btn-danger" id="resetBtn"><i class="fas fa-redo"></i> Reset Statistics</button>
                     <button class="btn btn-danger" id="deleteBtn" style="margin-top: 8px;"><i class="fas fa-trash"></i> Delete Account</button>
                 </div>
+            </div>
+
+            <div class="form-card glass-card reveal-up" data-delay="120">
+                <h2><i class="fas fa-user-pen"></i> Edit Profile</h2>
+                <div class="form-group-grid">
+                    <div class="form-group">
+                        <label>Display Name</label>
+                        <input type="text" id="profileNameInput" class="text-input" placeholder="Your name" />
+                    </div>
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="profileEmailInput" class="text-input" placeholder="you@email.com" />
+                    </div>
+                </div>
+                <button class="btn btn-glow" id="saveProfileBtn"><i class="fas fa-check"></i> Save Profile</button>
+                <div class="form-status" id="profileStatus"></div>
             </div>
 
             <!-- Change Password -->
@@ -160,6 +190,33 @@
                 <button class="btn btn-glow" id="changePassBtn"><i class="fas fa-check"></i> Update Password</button>
                 <div class="form-status" id="passStatus"></div>
             </div>
+
+            <div class="form-card glass-card reveal-up" data-delay="180">
+                <h2><i class="fas fa-envelope-open-text"></i> Forgot Password (email reset)</h2>
+                <div class="form-group-grid">
+                    <div class="form-group">
+                        <label>Email for reset link</label>
+                        <input type="email" id="forgotEmail" class="text-input" placeholder="you@email.com" />
+                    </div>
+                </div>
+                <button class="btn btn-outline" id="sendResetBtn"><i class="fas fa-paper-plane"></i> Send Reset Email</button>
+                <div class="form-status" id="forgotStatus"></div>
+
+                <div id="tokenResetWrap" style="margin-top:16px;display:none;">
+                    <div class="form-group-grid">
+                        <div class="form-group">
+                            <label>Reset token</label>
+                            <input type="text" id="resetTokenInput" class="text-input" />
+                        </div>
+                        <div class="form-group">
+                            <label>New password</label>
+                            <input type="password" id="resetNewPass" class="text-input" />
+                        </div>
+                    </div>
+                    <button class="btn btn-glow" id="resetByTokenBtn"><i class="fas fa-key"></i> Reset Password</button>
+                    <div class="form-status" id="tokenResetStatus"></div>
+                </div>
+            </div>
         </section>
     </main>
 
@@ -179,8 +236,9 @@
 
             try {
                 const res = await fetch(`${PROFILE_API_BASE}${path}`, { ...options, headers });
-                if (!res.ok) return null;
-                return await res.json();
+                const data = await res.json().catch(() => null);
+                if (!res.ok) return data || { success: false, message: 'Request failed' };
+                return data;
             } catch (_) {
                 return null;
             }
@@ -192,18 +250,113 @@
             window.location.href = 'login.html';
         });
 
-        document.getElementById('changePassBtn').addEventListener('click', () => {
+        function setStatus(el, message, isError = false) {
+            if (!el) return;
+            el.style.color = isError ? '#ff6b6b' : '#00ff87';
+            el.textContent = message;
+        }
+
+        document.getElementById('savePrefsBtn').addEventListener('click', () => {
+            const prefs = {
+                email_notifications: document.getElementById('prefEmailNotifications').checked,
+                trade_alerts: document.getElementById('prefTradeAlerts').checked,
+                compact_dashboard: document.getElementById('prefCompactDashboard').checked,
+            };
+            localStorage.setItem('zenith_profile_prefs', JSON.stringify(prefs));
+            setStatus(document.getElementById('prefsStatus'), 'Preferences saved.');
+            setTimeout(() => setStatus(document.getElementById('prefsStatus'), ''), 2500);
+        });
+
+        document.getElementById('saveProfileBtn').addEventListener('click', async () => {
+            const statusEl = document.getElementById('profileStatus');
+            const name = (document.getElementById('profileNameInput').value || '').trim();
+            const email = (document.getElementById('profileEmailInput').value || '').trim();
+            if (!name || !email) {
+                setStatus(statusEl, 'Name and email are required.', true);
+                return;
+            }
+
+            const res = await profileApiFetch('/auth/update-profile', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, email })
+            });
+
+            if (!res || res.success === false) {
+                setStatus(statusEl, (res && res.message) || 'Failed to update profile.', true);
+                return;
+            }
+
+            localStorage.setItem('zenith_email', email);
+            document.getElementById('profileName').textContent = name;
+            document.getElementById('profileEmail').textContent = email;
+            setStatus(statusEl, 'Profile updated.');
+        });
+
+        document.getElementById('changePassBtn').addEventListener('click', async () => {
             const statusEl = document.getElementById('passStatus');
+            const current = document.getElementById('currentPass').value;
             const pass1 = document.getElementById('newPass').value;
             const pass2 = document.getElementById('confirmPass').value;
             if (pass1 !== pass2) {
-                statusEl.style.color = '#ff6b6b';
-                statusEl.textContent = 'Passwords do not match';
+                setStatus(statusEl, 'Passwords do not match', true);
                 return;
             }
-            statusEl.style.color = '#00ff87';
-            statusEl.textContent = 'Password updated successfully!';
-            setTimeout(() => statusEl.textContent = '', 3000);
+
+            const res = await profileApiFetch('/auth/change-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ current_password: current, new_password: pass1 })
+            });
+
+            if (!res || res.success === false) {
+                setStatus(statusEl, (res && res.message) || 'Password update failed.', true);
+                return;
+            }
+
+            setStatus(statusEl, 'Password updated successfully.');
+            setTimeout(() => setStatus(statusEl, ''), 3000);
+        });
+
+        document.getElementById('sendResetBtn').addEventListener('click', async () => {
+            const statusEl = document.getElementById('forgotStatus');
+            const email = (document.getElementById('forgotEmail').value || '').trim();
+            if (!email) {
+                setStatus(statusEl, 'Please enter your email.', true);
+                return;
+            }
+            const res = await profileApiFetch('/auth/forgot-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
+            });
+            if (!res || res.success === false) {
+                setStatus(statusEl, 'Failed to send reset email.', true);
+                return;
+            }
+            setStatus(statusEl, res.message || 'If the email exists, a reset link was sent.');
+        });
+
+        document.getElementById('resetByTokenBtn').addEventListener('click', async () => {
+            const statusEl = document.getElementById('tokenResetStatus');
+            const token = (document.getElementById('resetTokenInput').value || '').trim();
+            const newPass = document.getElementById('resetNewPass').value;
+            if (!token || !newPass) {
+                setStatus(statusEl, 'Token and new password are required.', true);
+                return;
+            }
+
+            const res = await profileApiFetch('/auth/reset-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token, new_password: newPass })
+            });
+
+            if (!res || res.success === false) {
+                setStatus(statusEl, (res && res.message) || 'Reset failed.', true);
+                return;
+            }
+            setStatus(statusEl, 'Password has been reset. You can now log in with the new password.');
         });
 
         document.getElementById('resetBtn').addEventListener('click', () => {
@@ -213,35 +366,69 @@
         });
 
         document.getElementById('deleteBtn').addEventListener('click', () => {
-            if (confirm('Are you sure? This will delete your account permanently.')) {
-                if (confirm('This is your last warning!')) {
-                    localStorage.removeItem('zenith_token');
-                    window.location.href = 'index.html';
+            (async () => {
+                if (!confirm('Are you sure? This will delete your account permanently.')) return;
+                const password = prompt('Type your current password to confirm account deletion:');
+                if (!password) return;
+
+                const res = await profileApiFetch('/auth/delete-account', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+
+                if (!res || res.success === false) {
+                    alert((res && res.message) || 'Failed to delete account.');
+                    return;
                 }
-            }
+
+                localStorage.removeItem('zenith_token');
+                localStorage.removeItem('ultima_token');
+                localStorage.removeItem('zenith_email');
+                localStorage.removeItem('zenith_name');
+                window.location.href = 'index.html';
+            })();
         });
 
         // Load profile data
         async function initProfile() {
+            const nameEl = document.getElementById('profileName');
             const emailEl = document.getElementById('profileEmail');
             const createdEl = document.getElementById('profileCreated');
             const lastLoginEl = document.getElementById('profileLastLogin');
             const backtestsEl = document.getElementById('statBacktests');
+            const storedEl = document.getElementById('statStored');
             const tradesEl = document.getElementById('statTrades');
             const winRateEl = document.getElementById('statWinRate');
             const pnlEl = document.getElementById('statPnL');
+            const bestResultEl = document.getElementById('statBestResult');
 
             const emailFallback = localStorage.getItem('zenith_email') || localStorage.getItem('ultima_email') || 'Not available';
+            const nameFallback = localStorage.getItem('zenith_name') || 'User';
+            nameEl.textContent = nameFallback;
             emailEl.textContent = emailFallback;
             createdEl.textContent = '—';
             lastLoginEl.textContent = new Date().toLocaleString();
 
+            // load stored preferences
+            try {
+                const prefs = JSON.parse(localStorage.getItem('zenith_profile_prefs') || '{}');
+                document.getElementById('prefEmailNotifications').checked = prefs.email_notifications !== false;
+                document.getElementById('prefTradeAlerts').checked = prefs.trade_alerts !== false;
+                document.getElementById('prefCompactDashboard').checked = prefs.compact_dashboard === true;
+            } catch (_) {}
+
             const me = await profileApiFetch('/auth/me');
             if (me) {
+                const name = me.name || me.user?.name || nameFallback;
                 const email = me.email || me.user?.email || emailFallback;
                 const created = me.created_at || me.user?.created_at || me.createdAt || me.user?.createdAt;
                 const lastLogin = me.last_login || me.user?.last_login || me.lastLogin || me.user?.lastLogin;
 
+                if (name) {
+                    nameEl.textContent = name;
+                    localStorage.setItem('zenith_name', name);
+                }
                 if (email) emailEl.textContent = email;
                 if (created) {
                     const cd = new Date(created);
@@ -251,6 +438,11 @@
                     const ld = new Date(lastLogin);
                     if (!Number.isNaN(ld.getTime())) lastLoginEl.textContent = ld.toLocaleString();
                 }
+
+                const nameInput = document.getElementById('profileNameInput');
+                const emailInput = document.getElementById('profileEmailInput');
+                if (nameInput) nameInput.value = name || '';
+                if (emailInput) emailInput.value = email || '';
             }
 
             const metrics = await profileApiFetch('/metrics');
@@ -266,15 +458,37 @@
                 pnlEl.classList.toggle('negative', pnlValue < 0);
             }
 
-            const runs = await profileApiFetch('/runs');
-            if (runs && Array.isArray(runs)) {
-                backtestsEl.textContent = String(runs.length);
+            const runs = await profileApiFetch('/backtest/runs');
+            if (runs && Array.isArray(runs.runs)) {
+                backtestsEl.textContent = String(runs.runs.length);
             } else {
                 backtestsEl.textContent = '0';
+            }
+
+            const stored = await profileApiFetch('/backtest/stored-results');
+            if (stored && Array.isArray(stored.results)) {
+                storedEl.textContent = String(stored.results.length);
+                if (stored.results.length > 0) {
+                    const best = [...stored.results].sort((a, b) => Number(b.return_pct || 0) - Number(a.return_pct || 0))[0];
+                    bestResultEl.textContent = `${best.symbol || 'N/A'} ${best.mode || ''} (${Number(best.return_pct || 0).toFixed(2)}%)`;
+                } else {
+                    bestResultEl.textContent = '—';
+                }
+            } else {
+                storedEl.textContent = '0';
+                bestResultEl.textContent = '—';
             }
         }
 
         document.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            const resetToken = params.get('reset_token');
+            if (resetToken) {
+                const wrap = document.getElementById('tokenResetWrap');
+                const tokenInput = document.getElementById('resetTokenInput');
+                if (wrap) wrap.style.display = 'block';
+                if (tokenInput) tokenInput.value = resetToken;
+            }
             initProfile();
         });
     </script>
