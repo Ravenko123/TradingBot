@@ -2061,7 +2061,7 @@ def _mt5_ea_architecture_markdown() -> str:
 
 def _mt5_ea_template_mq5() -> str:
      return """#property strict
-#property version   \"1.10\"
+#property version   \"1.20\"
 #property description \"Zenith EA: risk guards + dashboard runtime push\"
 
 #include <Trade/Trade.mqh>
@@ -2072,8 +2072,8 @@ input double MaxDailyDrawdownPct = 3.00;
 input int    MaxOpenPositions = 3;
 
 input bool   PushRuntimeToDashboard = true;
-input string DashboardApiPushUrl = \"http://127.0.0.1:5000/api/mt5/runtime/push\";
-input string DashboardBearerToken = \"\";
+input string DashboardURL = \"\";
+input string DashboardAPIKey = \"\";
 input int    PushIntervalSeconds = 10;
 input string StrategyName = \"zenith_ea\";
 
@@ -2107,8 +2107,14 @@ bool PositionLimitReached() {
 
 void PushRuntimeSnapshot() {
     if(!PushRuntimeToDashboard) return;
-    if(StringLen(DashboardApiPushUrl) < 10) return;
-    if(StringLen(DashboardBearerToken) < 10) return;
+    if(StringLen(DashboardURL) < 8) return;
+    if(StringLen(DashboardAPIKey) < 8) return;
+
+    string pushUrl = DashboardURL;
+    // strip trailing slash
+    if(StringGetCharacter(pushUrl, StringLen(pushUrl)-1) == '/')
+        pushUrl = StringSubstr(pushUrl, 0, StringLen(pushUrl)-1);
+    pushUrl += \"/api/mt5/runtime/push\";
 
     string accountId = IntegerToString((int)AccountInfoInteger(ACCOUNT_LOGIN));
     double balance = AccountInfoDouble(ACCOUNT_BALANCE);
@@ -2129,7 +2135,7 @@ void PushRuntimeSnapshot() {
 
     string headers =
         \"Content-Type: application/json\\r\\n\"
-        + \"Authorization: Bearer \" + DashboardBearerToken + \"\\r\\n\";
+        + \"X-Bot-Key: \" + DashboardAPIKey + \"\\r\\n\";
 
     char data[];
     char result[];
@@ -2137,7 +2143,7 @@ void PushRuntimeSnapshot() {
     StringToCharArray(payload, data, 0, StringLen(payload), CP_UTF8);
 
     ResetLastError();
-    int code = WebRequest(\"POST\", DashboardApiPushUrl, headers, 7000, data, result, resultHeaders);
+    int code = WebRequest(\"POST\", pushUrl, headers, 7000, data, result, resultHeaders);
     if(code == -1) {
         Print(\"[ZenithEA] Runtime push failed. Error=\", GetLastError());
         return;
@@ -2188,20 +2194,23 @@ def _build_bot_package_zip() -> io.BytesIO:
             "MaxDailyDrawdownPct=3.0\n"
             "MaxOpenPositions=3\n"
             "PushRuntimeToDashboard=true\n"
-            "DashboardApiPushUrl=http://127.0.0.1:5000/api/mt5/runtime/push\n"
-            "DashboardBearerToken=PASTE_YOUR_TOKEN_HERE\n"
+            "DashboardURL=PASTE_YOUR_DASHBOARD_URL_HERE\n"
+            "DashboardAPIKey=PASTE_YOUR_API_KEY_HERE\n"
             "PushIntervalSeconds=10\n"
             "StrategyName=zenith_ea\n",
         )
 
         zf.writestr(
             "README_DOWNLOAD.txt",
-            "Zenith Trading Bot package (no source code).\n"
+            "Zenith Trading Bot package\n"
+            "========================\n\n"
             "1) Open ZenithEA.mq5 in MetaEditor and compile to .ex5\n"
-            "2) Use EA_Config_Template.set as starting configuration\n"
-            "3) In MT5: Tools -> Options -> Expert Advisors -> allow WebRequest for your API domain\n"
-            "4) Set DashboardApiPushUrl + DashboardBearerToken inputs in EA\n"
-            "5) Attach compiled EA to chart; EA will push runtime snapshots to dashboard\n",
+            "2) Attach compiled EA to any chart in MT5\n"
+            "3) In EA settings (Inputs tab), paste your Dashboard URL and API Key\n"
+            "   - Get these from the 'My Credentials' button on your dashboard\n"
+            "4) In MT5: Tools -> Options -> Expert Advisors -> tick 'Allow WebRequest'\n"
+            "   and add your dashboard URL to the allowed list\n"
+            "5) Enable Auto Trading - the EA will connect to your dashboard automatically\n",
         )
 
     zip_buf.seek(0)
@@ -2622,8 +2631,43 @@ def stop_bot():
 
 
 @app.route("/api/mt5/runtime/push", methods=["POST"])
-@require_auth
 def mt5_runtime_push():
+    """Accept runtime push from EA. Auth: X-Bot-Key header OR Bearer JWT."""
+    # Try X-Bot-Key first (EA push), then fall back to Bearer JWT (dashboard)
+    bot_key = (request.headers.get("X-Bot-Key") or "").strip()
+    if bot_key:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT k.id, k.user_id, u.email, u.name FROM bot_api_keys k JOIN users u ON u.id = k.user_id WHERE k.api_key = ?",
+            (bot_key,)
+        )
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return json_response({"success": False, "message": "Invalid API key"}, 401)
+        cur.execute("UPDATE bot_api_keys SET last_used_at = ? WHERE id = ?",
+                     (_utcnow().isoformat(), row["id"]))
+        conn.commit()
+        conn.close()
+        request.user = {"id": row["user_id"], "email": row["email"], "name": row["name"]}
+    else:
+        # Fall back to JWT auth
+        auth_header = request.headers.get("Authorization", "")
+        token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else ""
+        if not token:
+            return json_response({"success": False, "message": "Missing authentication"}, 401)
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT s.user_id, u.email, u.name, s.expires_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?", (token,))
+        row = cur.fetchone()
+        conn.close()
+        if not row:
+            return json_response({"success": False, "message": "Unauthorized"}, 401)
+        if datetime.fromisoformat(row["expires_at"]).replace(tzinfo=None) < _utcnow():
+            return json_response({"success": False, "message": "Session expired"}, 401)
+        request.user = {"id": row["user_id"], "email": row["email"], "name": row["name"]}
+
     payload = request.json or {}
     user_id = request.user["id"]
 

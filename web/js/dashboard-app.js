@@ -602,14 +602,6 @@ async function handleStartStop() {
     // ═══════════════════════════════════════════════════════════════════
     let _credsFullKey = null;  // store full key after generate
 
-    function _updateCredsJsonPreview(url, key) {
-        const pre = document.getElementById('credsJsonPreview');
-        if (pre) {
-            const obj = { web_api_url: url || '', bot_api_key: key || '' };
-            pre.textContent = JSON.stringify(obj, null, 2);
-        }
-    }
-
     async function openCredsModal() {
         const backdrop = document.getElementById('credsModalBackdrop');
         const urlInput = document.getElementById('credsDashUrl');
@@ -630,7 +622,6 @@ async function handleStartStop() {
                 ? `Last used: ${new Date(res.last_used_at).toLocaleString()}`
                 : 'Key active — never used yet.';
             _credsFullKey = null;
-            _updateCredsJsonPreview(dashUrl, res.key_masked || 'zbot_xxxxx...');
         } else {
             // Auto-generate a key for convenience
             if (keyInput) keyInput.value = '';
@@ -641,8 +632,6 @@ async function handleStartStop() {
                 _credsFullKey = gen.api_key;
                 if (keyInput) keyInput.value = gen.api_key;
                 if (hintEl) hintEl.textContent = '⚠ Copy this key now — it won\'t be shown in full again.';
-                _updateCredsJsonPreview(dashUrl, gen.api_key);
-                // Also refresh the Remote Bot Connection card
                 loadBotApiKey();
             } else {
                 if (keyInput) { keyInput.value = ''; keyInput.placeholder = 'Failed to generate'; }
@@ -658,7 +647,6 @@ async function handleStartStop() {
     async function regenCredsKey() {
         const keyInput = document.getElementById('credsApiKey');
         const hintEl = document.getElementById('credsKeyHint');
-        const urlInput = document.getElementById('credsDashUrl');
         const btn = document.getElementById('credsRegenKeyBtn');
 
         if (btn) { btn.disabled = true; btn.classList.add('is-loading'); }
@@ -669,7 +657,6 @@ async function handleStartStop() {
             _credsFullKey = gen.api_key;
             if (keyInput) keyInput.value = gen.api_key;
             if (hintEl) hintEl.textContent = '⚠ New key generated — copy it now!';
-            _updateCredsJsonPreview(urlInput?.value || window.location.origin, gen.api_key);
             loadBotApiKey();
         }
     }
@@ -2228,7 +2215,6 @@ function initEvents() {
     bind('credsModalBackdrop', (e) => { if (e.target.id === 'credsModalBackdrop') closeCredsModal(); });
     bind('credsCopyUrlBtn', () => { const v = document.getElementById('credsDashUrl')?.value; if (v) copyText(v, document.getElementById('credsCopyUrlBtn')); });
     bind('credsCopyKeyBtn', () => { const v = document.getElementById('credsApiKey')?.value; if (v) copyText(v, document.getElementById('credsCopyKeyBtn')); });
-    bind('credsCopyJsonBtn', () => { const v = document.getElementById('credsJsonPreview')?.textContent; if (v) copyText(v, document.getElementById('credsCopyJsonBtn')); });
     bind('credsRegenKeyBtn', regenCredsKey);
     bind('runBacktestBtn', () => {
         if (btRunInProgress) return;
