@@ -210,11 +210,11 @@ MAX_ORDER_RETRIES = 3
 RETRY_DELAY = 1.0  # seconds
 
 # Trade logging (only closed trades)
-TRADE_LOG_FILE = 'liverun/live_trades.csv'
+TRADE_LOG_FILE = str(Path(__file__).parent / 'liverun' / 'live_trades.csv')
 RUNTIME_STATUS_FILE = Path(__file__).parent / 'liverun' / 'runtime_status.json'
 
 # Learned parameters (auto-adjusted by optimizer)
-LEARNED_PARAMS_FILE = 'liverun/learned_params.json'
+LEARNED_PARAMS_FILE = str(Path(__file__).parent / 'liverun' / 'learned_params.json')
 
 # Optimizer settings
 OPTIMIZER_INTERVAL = 300  # Run optimizer every 5 minutes
