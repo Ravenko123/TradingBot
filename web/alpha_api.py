@@ -2434,19 +2434,15 @@ def get_status():
 @app.route("/api/bot/start", methods=["POST"])
 @require_auth
 def start_bot():
-    return json_response({
-        "success": False,
-        "message": "Disabled in web. Download bot package and run on MT5/VPS, then push runtime to dashboard.",
-    }, 410)
+    result, code = _start_bot_engine("dashboard")
+    return json_response(result, code)
 
 
 @app.route("/api/bot/stop", methods=["POST"])
 @require_auth
 def stop_bot():
-    return json_response({
-        "success": False,
-        "message": "Disabled in web. Stop bot from your VPS/MT5 runtime.",
-    }, 410)
+    result, code = _stop_bot_engine("dashboard")
+    return json_response(result, code)
 
 
 @app.route("/api/mt5/runtime/push", methods=["POST"])

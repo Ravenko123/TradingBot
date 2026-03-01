@@ -2077,6 +2077,7 @@ function initEvents() {
     bind('disableAllSymbolsBtn', () => setAllSymbols(false));
     bind('reloadBotConfigBtn', loadBotConfig);
     bind('refreshLiveMonitorBtn', loadBotMonitor);
+    bind('startStopBtn', handleStartStop);
     bind('saveTelegramConfigBtn', saveTelegramConfig);
     bind('mt5HelpCloseBtn', closeMt5HelpPopup);
     bind('mt5HelpOkBtn', closeMt5HelpPopup);

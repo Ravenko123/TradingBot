@@ -867,14 +867,18 @@
                 </div>
             </div>
 
+            <!-- Start / Stop Button -->
+            <div style="display:flex;justify-content:center;margin-bottom:20px;">
+                <button id="startStopBtn" class="btn btn-primary start-stop-btn" style="min-width:220px;padding:14px 32px;font-size:1.05rem;border-radius:12px;display:flex;align-items:center;justify-content:center;gap:10px;">
+                    <span class="btn-icon"><i class="fas fa-play"></i></span>
+                    <span class="btn-label">Start Bot</span>
+                    <span class="btn-loader" aria-hidden="true"></span>
+                </button>
+            </div>
+
             <!-- Live Bot Info -->
             <div class="form-card glass-card">
-                <div class="info-banner-mini">
-                    <i class="fas fa-info-circle"></i>
-                    <span>The bot runs <strong>independently</strong> on this PC via MetaTrader 5. This panel shows real-time status from the bot's heartbeat file. Start the bot by running <code>py -3 mt5_bot/main.py</code> in a terminal.</span>
-                </div>
-
-                <div class="activity-grid" style="margin-top:16px;">
+                <div class="activity-grid">
                     <div class="activity-item"><span class="activity-label">State</span><span class="activity-value" id="botCtrlState">—</span></div>
                     <div class="activity-item"><span class="activity-label">Symbols</span><span class="activity-value" id="botCtrlSymbols">—</span></div>
                     <div class="activity-item"><span class="activity-label">Open Positions</span><span class="activity-value" id="botCtrlPositions">—</span></div>
